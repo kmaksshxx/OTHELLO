@@ -1,3 +1,3 @@
 # OTHELLO
 
-Train Otheelo Game Using MCTS Method.
+Train Othello Game Using MCTS Method.
