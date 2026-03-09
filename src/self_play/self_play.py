@@ -1,8 +1,63 @@
+import numpy as np
+
 from src.mcts.mcts import *
 from collections import deque
 from typing import Optional
 
 
+def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
+    """
+    Generate self_play history
+
+    Returns
+        - results: [(own, opp, pi, z, winner), ...]
+        - winner
+    """
+    history: list[Tuple[int, int, np.ndarray, int]] = []
+    results: list[Tuple[int, int, np.ndarray, float, int]] = []
+
+    own, opp = init_board
+    pass_count = 0
+    last_action_by_prev_player = None
+    mcts = MCTS(model)
+
+    for move in range(max_moves):
+        n_sim = 800 if move < 10 else 400 if move < 30 else 200
+        temperature = 1.0 if move < 10 else 0.1 if move < 30 else 0
+
+        with timed(timer, 'search'):
+            pi = mcts.search(own, opp, n_sim, last_action_by_prev_player)
+
+        history.append((own, opp, pi, player))
+
+        with timed(timer, 'select_a_from_pi'):
+            action = select_action_from_pi(pi, temperature)
+
+        last_action_by_prev_player = action
+
+        with timed(timer, 'apply_move'):
+            own, opp = apply_move_bitboard(own, opp, action)
+            own, opp = opp, own
+            player = -player
+
+        pass_count = pass_count + 1 if action == PASS_ACTION else 0
+
+        if pass_count == 2:
+            break
+
+    own_count = popcount(own)
+    opp_count = popcount(opp)
+    diff = own_count - opp_count
+    winner = player if diff > 0 else -player if diff < 0 else 0
+
+    with timed(timer, 'history'):
+        for _own, _opp, pi, p in history:
+            z = 0.0 if winner == 0 else (1.0 if winner == p else -1.0)
+            results.append((_own, _opp, pi, z, p))
+
+    return results, winner
+
+# 여기서부터 수정
 def generate_game(policy_by_player: dict,
                   max_moves=128,
                   n_sim=50,
@@ -22,7 +77,6 @@ def generate_game(policy_by_player: dict,
     history: list[Tuple[int, int, np.ndarray, int]] = []
     results: list[Tuple[int, int, np.ndarray, float, int]] = []
     pass_count = 0
-    last_action_by_prev_player = None
 
     for move in range(max_moves):
         policy = policy_by_player[player]
@@ -34,7 +88,7 @@ def generate_game(policy_by_player: dict,
             temperature = 0 if duel else 1.0 if move < 10 else 0.1 if move < 30 else 0
 
             with timed(timer, 'search'):
-                pi = mcts.search(own, opp, last_action_by_prev_player)
+                pi = mcts.search(own, opp)
 
             with timed(timer, 'select_a_from_pi'):
                 action = select_action_from_pi(pi, temperature)
@@ -85,7 +139,7 @@ def generate_game(policy_by_player: dict,
 class EloAgent:
     def __init__(self, init_elo=1500, K=16, window=4, plateau_delta=20):
         self.elos = defaultdict(float)  # model_id -> elo
-        self.history = deque(maxlen=window)  # 최근 Elo 변화
+        self.history = deque(maxlen=window)  # elos
         self.window = window
         self.K = K
         self.plateau_delta = plateau_delta
@@ -147,7 +201,7 @@ class EloAgent:
           - delta
         """
         Ea = self.expected(a_id, b_id)
-        delta = self.K * (result_a - Ea)
+        delta = self.K * (float(result_a) - Ea)
         self.elos[a_id] += delta
 
         if not freeze_b:
@@ -159,17 +213,22 @@ class EloAgent:
 def duel(old_model, new_model,
          old_id='old', new_id='new',
          elo_agent: Optional[EloAgent] = None,
-         n_games=20, n_sim=50, timer=None):
+         n_games=20, n_sim=800, timer=None):
     stats = defaultdict(float)
     total_elo_delta_new = 0
+
     if elo_agent is None:
         elo_agent = EloAgent()
+
+    if old_model is None:
+        old_id = 'random'
 
     mcts_old = None if old_model is None else MCTS(old_model, add_noise=False, n_sim=n_sim)
     mcts_new = MCTS(new_model, add_noise=False, n_sim=n_sim)
 
     for i in range(n_games):
-        if mcts_old: mcts_old.reset_tree()
+        if mcts_old:
+            mcts_old.reset_tree()
         mcts_new.reset_tree()
 
         if i % 2 == 0:
