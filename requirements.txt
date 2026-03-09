@@ -1,4 +1,6 @@
-torch
-numpy
-matplotlib
-numba
+torch~=2.10.0
+numpy~=1.26.4
+matplotlib~=3.8.4
+numba~=0.63.1
+
+pyyaml~=6.0.3

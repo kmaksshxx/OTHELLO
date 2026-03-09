@@ -1,3 +1,8 @@
+import torch
+import torch.nn.functional as F
+import torch.nn as nn
+
+
 class ResidualBlock(nn.Module):
     def __init__(self, channels):
         super().__init__()
@@ -12,6 +17,7 @@ class ResidualBlock(nn.Module):
         out = self.bn2(self.conv2(out))
         out += identity  # skip connection
         return F.relu(out)
+
 
 class OthelloResNet(nn.Module):
     def __init__(self, num_blocks=4, channels=64):
@@ -42,7 +48,7 @@ class OthelloResNet(nn.Module):
         # policy head
         p = F.relu(self.policy_bn(self.policy_conv(x)))
         p = p.view(p.size(0), -1)
-        p = self.policy_fc(p) #(B, 64)
+        p = self.policy_fc(p)  # (B, 64)
 
         # value head
         v = F.relu(self.value_bn(self.value_conv(x)))
@@ -50,4 +56,5 @@ class OthelloResNet(nn.Module):
         v = F.relu(self.value_fc1(v))
         v = torch.tanh(self.value_fc2(v))
 
-        return p, v #(B, 64), (B, 1)
+        return p, v  # (B, 64), (B, 1)
+
