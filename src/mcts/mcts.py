@@ -422,3 +422,24 @@ if __name__ == '__main__':
     own, opp = init_board
     mcts.search(own, opp, timer=timer)
     timer.report()
+
+    # _mcts.reset_tree()
+    #
+    # pass_count = 0
+    # own, opp = init_board
+    # action = None
+    # player = 1
+    #
+    # while True:
+    #     pi = _mcts.search(own, opp, last_action_by_prev_player=action)
+    #     action = select_action_from_pi(pi, temperature=0.01)
+    #     own, opp = apply_move_bitboard(own, opp, action)
+    #     own, opp = opp, own
+    #     player = -player
+    #
+    #     pass_count = pass_count + 1 if action == PASS_ACTION else 0
+    #
+    #     if pass_count == 2:
+    #         break
+    #
+    # render(own, opp, player)
