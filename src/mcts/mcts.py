@@ -1,6 +1,6 @@
 from src.environment import *
 from src.models.models import OthelloResNet
-from typing import Union
+from typing import Union, Optional
 from pathlib import Path
 import yaml
 
@@ -194,10 +194,10 @@ class MCTS:
         self.node_count_ref[0] += 1
         return nid
 
-    def ensure_root(self, own, opp, last_action_by_prev_player: Union[int, None] = None):
+    def ensure_root(self, own, opp, last_action: Optional[int] = None):
         # Try to reuse the tree if possible
-        if self.root_nid != -1 and last_action_by_prev_player is not None:
-            child_nid = self.children[self.root_nid, last_action_by_prev_player]
+        if self.root_nid != -1 and last_action is not None:
+            child_nid = self.children[self.root_nid, last_action]
             if child_nid != -1 and self.expanded[child_nid] == 1:
                 self.root_nid = child_nid
                 self.root_own = own
@@ -231,7 +231,7 @@ class MCTS:
             v.cpu().numpy().item()
         )
 
-    def search(self, own, opp, n_sim=None, last_action_by_prev_player: Union[int, None] = None,
+    def search(self, own, opp, n_sim=None, last_action: Optional[int] = None,
                timer=None):
         if n_sim is None:
             n_sim = self.n_sim
@@ -239,7 +239,7 @@ class MCTS:
         total_depth = 0
 
         with timed(timer, 'ensure_root'):
-            self.ensure_root(own, opp, last_action_by_prev_player)
+            self.ensure_root(own, opp, last_action)
 
         for sim in range(n_sim):
             with timed(timer, 'run_one_simulation'):
@@ -283,7 +283,7 @@ class MCTS:
     # ---------------------------------------------------------
 
     def run_one_simulation(self, root_own, root_opp,
-                           timer: Union[None, SectionTimer] = None):
+                           timer: Optional[SectionTimer] = None):
         nid = self.root_nid
         own, opp = root_own, root_opp
 

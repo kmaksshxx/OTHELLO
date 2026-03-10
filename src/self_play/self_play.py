@@ -1,8 +1,5 @@
-import numpy as np
-
 from src.mcts.mcts import *
 from collections import deque
-from typing import Optional
 
 
 def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
@@ -18,7 +15,7 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
 
     own, opp = init_board
     pass_count = 0
-    last_action_by_prev_player = None
+    last_action = None
     mcts = MCTS(model)
 
     for move in range(max_moves):
@@ -26,14 +23,14 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
         temperature = 1.0 if move < 10 else 0.1 if move < 30 else 0
 
         with timed(timer, 'search'):
-            pi = mcts.search(own, opp, n_sim, last_action_by_prev_player)
+            pi = mcts.search(own, opp, n_sim=n_sim, last_action=last_action)
 
         history.append((own, opp, pi, player))
 
         with timed(timer, 'select_a_from_pi'):
             action = select_action_from_pi(pi, temperature)
 
-        last_action_by_prev_player = action
+        last_action = action
 
         with timed(timer, 'apply_move'):
             own, opp = apply_move_bitboard(own, opp, action)
@@ -57,7 +54,7 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
 
     return results, winner
 
-# 여기서부터 수정
+
 def generate_game(policy_by_player: dict,
                   max_moves=128,
                   n_sim=50,

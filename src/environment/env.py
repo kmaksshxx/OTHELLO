@@ -1,6 +1,6 @@
 import numpy as np
 import numba as nb
-from typing import Tuple
+from typing import Tuple, Optional
 from collections import defaultdict
 from contextlib import contextmanager
 
@@ -287,7 +287,7 @@ def render(black: int,
     for r in range(BOARD_SIZE):
         for c in range(BOARD_SIZE):
             idx = r * BOARD_SIZE + c
-            bit = np.uint64(1) << np.uint64(idx)
+            bit = 1 << idx
 
             if black & bit:
                 plt.plot(c, r, 'o', markersize=30, color='black')
@@ -313,7 +313,7 @@ def render(black: int,
             # Find the index of the least significant bit (LSB)
             idx_found = -1
             for i in range(64):
-                if (legal >> np.uint64(i)) & np.uint64(1):
+                if (legal >> i) & 1:
                     idx_found = i
                     break
             if idx_found == -1:  # Should not happen if legal > 0
@@ -322,7 +322,7 @@ def render(black: int,
             r = idx_found // BOARD_SIZE
             c = idx_found % BOARD_SIZE
             plt.plot(c, r, 'o', markersize=10, color='red', alpha=0.6)
-            legal ^= (np.uint64(1) << np.uint64(idx_found))  # Clear the found bit
+            legal ^= (1 << idx_found)  # Clear the found bit
 
     plt.gca().invert_yaxis()
     plt.xticks(range(BOARD_SIZE))
@@ -363,7 +363,7 @@ timer = SectionTimer()
 
 
 @contextmanager
-def timed(timer: None | SectionTimer, label: str):
+def timed(timer: Optional[SectionTimer], label: str):
     if timer is None:
         yield
         return
