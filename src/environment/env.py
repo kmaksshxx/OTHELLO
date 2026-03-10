@@ -163,7 +163,7 @@ def apply_move_bitboard(own, opp, action_idx) -> Tuple[int, int]:
     t |= ((t << 8) & opp)
     t |= ((t << 8) & opp)
     t |= ((t << 8) & opp)
-    if ((t << 8) & own):
+    if (t << 8) & own:
         flipped |= t
 
     # ---- NW
@@ -172,7 +172,7 @@ def apply_move_bitboard(own, opp, action_idx) -> Tuple[int, int]:
     t |= (((t & NOT_A_FILE) >> 9) & opp)
     t |= (((t & NOT_A_FILE) >> 9) & opp)
     t |= (((t & NOT_A_FILE) >> 9) & opp)
-    if (((t & NOT_A_FILE) >> 9) & own):
+    if ((t & NOT_A_FILE) >> 9) & own:
         flipped |= t
 
     # ---- NE
