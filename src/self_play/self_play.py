@@ -13,17 +13,12 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
     history: list[Tuple[int, int, np.ndarray, int]] = []
     results: list[Tuple[int, int, np.ndarray, float, int]] = []
 
+    pass_count = 0
     own, opp = init_board
     last_action = None
     mcts = MCTS(model)
 
     for move in range(max_moves):
-        with timed(timer, 'legal'):
-            legal = get_legal_board(own, opp)
-
-        if not legal:
-            break
-
         n_sim = 800 if move < 10 else 400 if move < 30 else 200
         temperature = 1.0 if move < 10 else 0.1 if move < 30 else 0
 
@@ -42,7 +37,6 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
             own, opp = opp, own
             player = -player
 
-
     diff = popcount(own) - popcount(opp)
     winner = player if diff > 0 else -player if diff < 0 else 0
 
@@ -56,8 +50,9 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
 
 def generate_duel_play(model_a: OthelloResNet,
                        model_b: OthelloResNet,
+                       n_sim=50,
                        max_moves=128,
-                       timer=None):
+                       timer=None) -> int:
     """
     Duel with Two Models.
 
@@ -65,20 +60,34 @@ def generate_duel_play(model_a: OthelloResNet,
       - winner
     """
 
-    mcts_a = MCTS(model=model_a, add_noise=False)
-    mcts_b = MCTS(model=model_b, add_noise=False)
+    mcts_a = MCTS(model=model_a, add_noise=False, n_sim=n_sim)
+    mcts_b = MCTS(model=model_b, add_noise=False, n_sim=n_sim)
 
     own, opp = init_board
     player = 1
+    pass_count = 0
 
     for move in range(max_moves):
-        pass
+        mcts = mcts_a if player == 1 else mcts_b
+        pi = mcts.search(own, opp, timer=timer)
+        action = select_action_from_pi(pi, 0)
+
+        own, opp = apply_move_bitboard(own, opp, action)
+        own, opp = opp, own
+        player = -player
+
+        pass_count = pass_count + 1 if action == PASS_ACTION else 0
+
+        if pass_count == 2:
+            break
+
+    diff = popcount(own) - popcount(opp)
+    winner = player if diff > 0 else -player if diff < 0 else 0
+    return winner
 
 
 
-
-
-
+'''
 def generate_game(old_model: Optional[OthelloResNet],
                   new_model: Optional[OthelloResNet],
                   max_moves=128,
@@ -156,6 +165,8 @@ def generate_game(old_model: Optional[OthelloResNet],
             results.append((_own, _opp, pi, z, p))  # Store bitboards directly
 
     return results, winner
+
+'''
 
 
 class EloAgent:
@@ -235,7 +246,7 @@ class EloAgent:
 def duel(old_model, new_model,
          old_id='old', new_id='new',
          elo_agent: Optional[EloAgent] = None,
-         n_games: int = 20, n_sim: int = 800,
+         n_games: int = 20, n_sim: int = 50,
          timer: Optional[SectionTimer] = None):
     stats = defaultdict(float)
     total_elo_delta_new = 0

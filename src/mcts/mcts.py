@@ -13,6 +13,7 @@ with open(config_path) as f:
 MCTS_SIMS = config['MCTS']['N_SIMS']
 MCTS_BATCH = config['MCTS']['BATCH_SIZE']
 MAX_DEPTH = config['MAX_DEPTH']
+MAX_NODE = config['MCTS']['MAX_NODE']
 default_model = OthelloResNet()
 
 
@@ -115,7 +116,7 @@ def popcount(x: int):
 class MCTS:
     def __init__(self, model, c_puct=1.5, n_sim=MCTS_SIMS,
                  batch_eval=MCTS_BATCH, dirichlet_alpha=0.3, dirichlet_epsilon=0.25,
-                 max_nodes=200_000, device=DEVICE, add_noise=True):
+                 max_nodes=MAX_NODE, device=DEVICE, add_noise=True):
         self.model = model
         self.c_puct = c_puct
         self.n_sim = n_sim
