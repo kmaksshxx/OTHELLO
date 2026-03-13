@@ -14,7 +14,6 @@ ACTION_SIZE = PASS_ACTION + 1
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
-@property
 def init_board():
     return 34628173824, 68853694464
 
@@ -85,16 +84,14 @@ def bitboard_to_array(bitboard) -> np.ndarray:
     return moves[:count]  # Return only the filled part
 
 
-@nb.njit(nb.uint64(nb.uint64, nb.uint64))
 def get_legal_moves(own, opp) -> np.ndarray:
     legal = get_legal_board(own, opp)
     return bitboard_to_array(legal)
 
 
-@nb.njit(nb.uint64(nb.uint64, nb.uint64))
-def get_random_moves(own, opp) -> np.ndarray:
+def get_random_action(own, opp) -> int:
     actions = get_legal_moves(own, opp)
-    return np.random.choice(actions)
+    return np.random.choice(actions) if actions.any() else PASS_ACTION
 
 
 @nb.njit
@@ -226,14 +223,14 @@ def apply_move_bitboard(own, opp, action_idx) -> Tuple[int, int]:
 
 @nb.njit(nb.float32[:, :, :](nb.uint64, nb.uint64), inline='always')
 def bitboard_to_input(own, opp):
-    inp = np.zeros((1, 2, 8, 8), dtype=np.float32)
+    inp = np.zeros((2, 8, 8), dtype=np.float32)
 
     for i in range(64):
         r = i >> 3
         c = i & 7
 
-        inp[0, 0, r, c] = (own >> i) & 1
-        inp[0, 1, r, c] = (opp >> i) & 1
+        inp[0, r, c] = (own >> i) & 1
+        inp[1, r, c] = (opp >> i) & 1
 
     return inp
 
@@ -389,3 +386,20 @@ def timed(timer: Optional[SectionTimer], label: str):
         yield
     finally:
         timer.add(label, t0)
+
+
+if __name__ == "__main__":
+    own, opp = init_board()
+    with timed(timer, 'get_legal_board'):
+        get_legal_board(own, opp)
+
+    with timed(timer, 'get_legal_moves'):
+        get_legal_moves(own, opp)
+
+    with timed(timer, 'get_random_action'):
+        get_random_action(own, opp)
+    #
+    # with timed(timer, 'get_random_action3'):
+    #     get_random_action3(own, opp)
+
+    timer.report()

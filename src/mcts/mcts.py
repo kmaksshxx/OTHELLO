@@ -419,7 +419,7 @@ class MCTS:
 if __name__ == '__main__':
     mcts = MCTS(default_model, n_sim=MCTS_SIMS, batch_eval=MCTS_BATCH)
     timer = SectionTimer('MCTS')
-    own, opp = init_board
+    own, opp = init_board()
     mcts.search(own, opp, timer=timer)
     timer.report()
 

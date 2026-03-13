@@ -1,3 +1,6 @@
+from src.self_play.self_play import *
+
+
 def save_checkpoint(model, best_model, optimizer, elo_tracker):
   torch.save({
     "model": model.state_dict(),
@@ -15,7 +18,7 @@ def load_checkpoint():
 
   return ck
 
-#@title Train step
+
 def alphazero_loss(policy_logits, value, target_pi, target_z, value_coef=1.0):
     logp = F.log_softmax(policy_logits, dim=1) #(B, 65)
     policy_loss = - torch.mean(torch.sum(target_pi * logp, dim=1))

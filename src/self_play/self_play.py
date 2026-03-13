@@ -14,7 +14,7 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
     results: list[Tuple[int, int, np.ndarray, float, int]] = []
 
     pass_count = 0
-    own, opp = init_board
+    own, opp = init_board()
     last_action = None
     mcts = MCTS(model)
 
@@ -63,7 +63,7 @@ def generate_duel_play(model_a: OthelloResNet,
     mcts_a = MCTS(model=model_a, add_noise=False, n_sim=n_sim)
     mcts_b = MCTS(model=model_b, add_noise=False, n_sim=n_sim)
 
-    own, opp = init_board
+    own, opp = init_board()
     player = 1
     pass_count = 0
 
@@ -93,7 +93,7 @@ def generate_random_play(model: OthelloResNet,
                          timer=None) -> int:
     assert model_player in (1, -1)
 
-    own, opp = init_board
+    own, opp = init_board()
     pass_count = 0
     mcts = MCTS(model, n_sim=n_sim, add_noise=False)
 
@@ -118,93 +118,48 @@ def generate_random_play(model: OthelloResNet,
         own, opp = opp, own
 
 
-
-
-
-
-
-
-
-'''
-def generate_game(old_model: Optional[OthelloResNet],
-                  new_model: Optional[OthelloResNet],
-                  max_moves=128,
-                  n_sim=50,
-                  duel=False,
-                  timer=None):
+def generate_game(policy_by_player: dict,
+                  n_sim=50) -> int:
     """
-    Duel with two models. Set random if model is None
+    Duel with two models.
+
+    policy_by_player[player] -> dict with model
+      - Set random if None
 
     Returns
-        - results: [(s, pi, z, winner), ...]
-        - winner
+      - Winner
     """
-    own, opp = init_board
+
+    mcts_by_player = {
+        p: None if m is None else MCTS(m, n_sim=n_sim, add_noise=False)
+        for p, m in policy_by_player.items()
+    }
+
+    own, opp = init_board()
     player = 1
-    history: list[Tuple[int, int, np.ndarray, int]] = []
-    results: list[Tuple[int, int, np.ndarray, float, int]] = []
     pass_count = 0
-    old_mcts = None if old_model is None else MCTS(old_model, n_sim=n_sim, add_noise=False)
-    new_mcts = None if new_model is None else MCTS(new_model, n_sim=n_sim, add_noise=False)
 
-    for move in range(max_moves):
-        policy = policy_by_player[player]
-        mcts = policy.get("mcts", None)
+    while True:
+        mcts = mcts_by_player[player]
+        if mcts is None:
+            action = get_random_action(own, opp)
 
-        if mcts is not None:
-            # set n_sim and temperature
-            mcts.n_sim = n_sim if duel else 800 if move < 10 else 400 if move < 30 else 200
-            temperature = 0 if duel else 1.0 if move < 10 else 0.1 if move < 30 else 0
-
-            with timed(timer, 'search'):
-                pi = mcts.search(own, opp)
-
-            with timed(timer, 'select_a_from_pi'):
-                action = select_action_from_pi(pi, temperature)
-
-            if policy.get('record', True) and not duel:
-                # Use bitboard representation for history
-                history.append((own, opp, pi, player))
-
-        # Random Policy
         else:
-            with timed(timer, 'legal'):
-                legal = get_legal_board(own, opp)
+            pi = mcts.search(own, opp)
+            action = select_action_from_pi(pi, 0)
 
-            if legal == 0:
-                action = PASS_ACTION
-            else:
-                # bitboard_to_array returns np.int64 array, np.random.choice handles it
-                moves = bitboard_to_array(legal)
-                action = np.random.choice(moves)
-
-        last_action_by_prev_player = action
-
-        with timed(timer, 'apply_move'):
-            own, opp = apply_move_bitboard(own, opp, action)
-            own, opp = opp, own
-            player = -player
+        own, opp = apply_move_bitboard(own, opp, action)
+        own, opp = opp, own
+        player = -player
 
         pass_count = pass_count + 1 if action == PASS_ACTION else 0
 
         if pass_count == 2:
             break
 
-    own_count = popcount(own)
-    opp_count = popcount(opp)
-    diff = own_count - opp_count
+    diff = popcount(own) - popcount(opp)
     winner = player if diff > 0 else -player if diff < 0 else 0
-
-    with timed(timer, 'history'):
-        for _own, _opp, pi, p in history:
-            z = 0.0 if winner == 0 else (1.0 if winner == p else -1.0)
-            # When adding to replay buffer, use bitboard directly
-            # Convert to board array only if needed later, or adapt replay buffer to store bitboards
-            results.append((_own, _opp, pi, z, p))  # Store bitboards directly
-
-    return results, winner
-
-'''
+    return winner
 
 
 class EloAgent:
@@ -261,27 +216,29 @@ class EloAgent:
             if x not in self.elos:
                 self.elos[x] = self.init_elo
 
-    def update_game(self, a_id: str, b_id: str, result_a: int | float, freeze_b=False) -> float:
+    def update_game(self, id_a: str, id_b: str, result_a: float) -> float:
         """
         Record ids and results
-          - a_id: player 1
-          - b_id: player 2
-          - result from a's perspective : 0.0 (draw), 1.0 (win), -1.0 (lose)
+          - id_a: player 1
+          - id_b: player 2
+          - result from a's perspective : 1.0 (win), 0.0 (lose), 0.5 (draw)
         Returns
           - delta
         """
-        Ea = self.expected(a_id, b_id)
-        delta = self.K * (float(result_a) - Ea)
-        self.elos[a_id] += delta
+        Ea = self.expected(id_a, id_b)
+        delta = self.K * (result_a - Ea)
 
-        if not freeze_b:
-            self.elos[b_id] -= delta
+        if id_a != 'random':
+            self.elos[id_a] += delta
+
+        if id_b != 'random':
+            self.elos[id_b] -= delta
 
         return delta
 
 
-def duel(old_model, new_model,
-         old_id='old', new_id='new',
+def duel(model_a, model_b,
+         id_a='old', id_b='new',
          elo_agent: Optional[EloAgent] = None,
          n_games: int = 20, n_sim: int = 50,
          timer: Optional[SectionTimer] = None):
@@ -291,52 +248,41 @@ def duel(old_model, new_model,
     if elo_agent is None:
         elo_agent = EloAgent()
 
-    if old_model is None:
-        old_id = 'random'
+    if model_a is None:
+        id_a = 'random'
 
-    mcts_old = None if old_model is None else MCTS(old_model, add_noise=False, n_sim=n_sim)
-    mcts_new = MCTS(new_model, add_noise=False, n_sim=n_sim)
+    if model_b is None:
+        id_b = 'random'
 
     for i in range(n_games):
-        if mcts_old:
-            mcts_old.reset_tree()
-        mcts_new.reset_tree()
-
         if i % 2 == 0:
-            players = {1: mcts_old, -1: mcts_new}
-            old_color = 1
+            winner = generate_game({1: model_a, -1: model_b}, n_sim=n_sim)
+            color_a = 1
+
         else:
-            players = {1: mcts_new, -1: mcts_old}
-            old_color = -1
+            winner = generate_game({1: model_b, -1: model_a}, n_sim=n_sim)
+            color_a = -1
 
-        _, winner = generate_game({
-            p: {'mcts': m, 'record': False}
-            for p, m in players.items()
-        }, duel=True, timer=timer)
-
-        if winner == 0:
-            stats["draw"] += 1.0
-            Sb_new = 0.5
-        elif winner == old_color:
-            stats["old_win"] += 1.0
-            Sb_new = 0.0
-        else:
-            stats["new_win"] += 1.0
-            Sb_new = 1.0
-
-        delta = elo_agent.update_game(new_id, old_id, Sb_new, (old_model is None))
+        result_a = 1.0 if winner == color_a else 0.5 if winner == 0 else 0.0
+        stats['history_a'] += result_a
+        delta = elo_agent.update_game(id_a, id_b, result_a)
         total_elo_delta_new += delta
 
-    stats["win_rate_old"] = (
-        stats["old_win"] + 0.5 * stats["draw"]
-        ) / n_games
-    stats["win_rate_new"] = 1 - stats["win_rate_old"]
+    stats['win_rate_a'] = stats['history_a'] / n_games
+    stats['win_rate_b'] = 1 - stats['win_rate_a']
 
     elo_agent.record_iteration_delta(total_elo_delta_new)
 
     stats["elo_delta_new"] = total_elo_delta_new
-    stats["elo_new"] = elo_agent.elos[new_id]
-    stats["elo_old"] = elo_agent.elos[old_id]
+    stats[id_a] = elo_agent.elos[id_a]
+    stats[id_b] = elo_agent.elos[id_b]
     stats["plateau"] = float(elo_agent.is_plateau())
 
     return stats
+
+
+if __name__ == "__main__":
+    with timed(timer, 'duel'):
+        duel(default_model, default_model)
+
+    timer.report()
