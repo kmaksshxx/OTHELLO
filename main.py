@@ -1,6 +1,11 @@
 from src.mcts.mcts import *
 
 own, opp = init_board
+x = get_legal_board(own, opp)
+y = bitboard_to_array(x)
+print(y)
+print(np.random.choice(y))
+breakpoint()
 player = 1
 pass_count = 0
 action = None

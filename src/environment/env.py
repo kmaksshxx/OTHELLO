@@ -11,9 +11,13 @@ import torch.cuda
 BOARD_SIZE = 8
 PASS_ACTION = BOARD_SIZE ** 2
 ACTION_SIZE = PASS_ACTION + 1
-init_board = (34628173824, 68853694464)
-PASS_MOVE = np.uint64(64)
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+@property
+def init_board():
+    return 34628173824, 68853694464
+
 
 # Masks to prevent wrap-around when shifting horizontally/diagonally
 NOT_A_FILE = np.uint64(0xfefefefefefefefe)  # Clears bits in column A (0)
@@ -81,6 +85,18 @@ def bitboard_to_array(bitboard) -> np.ndarray:
     return moves[:count]  # Return only the filled part
 
 
+@nb.njit(nb.uint64(nb.uint64, nb.uint64))
+def get_legal_moves(own, opp) -> np.ndarray:
+    legal = get_legal_board(own, opp)
+    return bitboard_to_array(legal)
+
+
+@nb.njit(nb.uint64(nb.uint64, nb.uint64))
+def get_random_moves(own, opp) -> np.ndarray:
+    actions = get_legal_moves(own, opp)
+    return np.random.choice(actions)
+
+
 @nb.njit
 def board_to_bitboard(board: np.ndarray) -> Tuple[np.uint64, np.uint64]:
     """
@@ -124,7 +140,7 @@ def board_to_input(board: np.ndarray, player: int) -> np.ndarray:
 
 @nb.njit(nb.types.UniTuple(nb.uint64, 2)(nb.uint64, nb.uint64, nb.uint64))
 def apply_move_bitboard(own, opp, action_idx) -> Tuple[int, int]:
-    if action_idx == PASS_MOVE:
+    if action_idx == np.uint64(PASS_ACTION):
         return own, opp
 
     move = np.uint64(1) << action_idx
@@ -210,14 +226,14 @@ def apply_move_bitboard(own, opp, action_idx) -> Tuple[int, int]:
 
 @nb.njit(nb.float32[:, :, :](nb.uint64, nb.uint64), inline='always')
 def bitboard_to_input(own, opp):
-    inp = np.zeros((2, 8, 8), dtype=np.float32)
+    inp = np.zeros((1, 2, 8, 8), dtype=np.float32)
 
     for i in range(64):
         r = i >> 3
         c = i & 7
 
-        inp[0, r, c] = (own >> i) & 1
-        inp[1, r, c] = (opp >> i) & 1
+        inp[0, 0, r, c] = (own >> i) & 1
+        inp[0, 1, r, c] = (opp >> i) & 1
 
     return inp
 

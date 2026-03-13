@@ -1,6 +1,5 @@
 from src.environment import *
 from src.models.models import OthelloResNet
-from typing import Union, Optional
 from pathlib import Path
 import yaml
 

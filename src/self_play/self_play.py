@@ -86,6 +86,44 @@ def generate_duel_play(model_a: OthelloResNet,
     return winner
 
 
+def generate_random_play(model: OthelloResNet,
+                         model_player: int = 1,
+                         n_sim=50,
+                         max_moves=128,
+                         timer=None) -> int:
+    assert model_player in (1, -1)
+
+    own, opp = init_board
+    pass_count = 0
+    mcts = MCTS(model, n_sim=n_sim, add_noise=False)
+
+    if model_player == -1:
+        legal = get_legal_board(own, opp)
+        action = np.random.choice(legal)
+        own, opp = apply_move_bitboard(own, opp, action)
+        own, opp = opp, own
+
+    while True:
+        pi = mcts.search(own, opp)
+        action = select_action_from_pi(pi, 0)
+        own, opp = apply_move_bitboard(own, opp, action)
+        own, opp = opp, own
+
+        pass_count = pass_count + 1 if action == PASS_ACTION else 0
+        if pass_count == 2:
+            break
+
+        action = np.random.choice(get_legal_board(own, opp))
+        own, opp = apply_move_bitboard(own, opp, action)
+        own, opp = opp, own
+
+
+
+
+
+
+
+
 
 '''
 def generate_game(old_model: Optional[OthelloResNet],
@@ -223,13 +261,12 @@ class EloAgent:
             if x not in self.elos:
                 self.elos[x] = self.init_elo
 
-    def update_game(self, a_id: str, b_id: str, result_a: Union[int, float], freeze_b=False) -> float:
+    def update_game(self, a_id: str, b_id: str, result_a: int | float, freeze_b=False) -> float:
         """
         Record ids and results
           - a_id: player 1
           - b_id: player 2
           - result from a's perspective : 0.0 (draw), 1.0 (win), -1.0 (lose)
-
         Returns
           - delta
         """
