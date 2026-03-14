@@ -1,39 +1,51 @@
 from src.self_play.self_play import *
+from src.buffer.buffer import ReplayBuffer
+import torch.nn.functional as F
+
+saved_path = ROOT / 'checkpoint' / 'checkpoint.tar'
+
+train_param = config['train_param']
+VALUE_COEF = train_param['VALUE_COEF']
+CLIP_GRAD = train_param['CLIP_GRAD']
+LR = train_param['LR']
+WEIGHT_DECAY = train_param['WEIGHT_DECAY']
+NUM_ITERATIONS = 5000
+TRAIN_STEPS_PER_ITER = 20
 
 
 def save_checkpoint(model, best_model, optimizer, elo_tracker):
-  torch.save({
-    "model": model.state_dict(),
-    "best_model": best_model.state_dict(),
-    "optimizer": optimizer.state_dict(),
-    "elo": elo_tracker.state_dict()
-  }, saved_path)
+    torch.save({
+        "model": model.state_dict(),
+        "best_model": best_model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "elo": elo_tracker.state_dict()
+    }, saved_path)
 
 
 def load_checkpoint():
-  if DEVICE == 'cpu':
-    ck = torch.load(saved_path, map_location=torch.device('cpu'))
-  elif DEVICE == 'cuda':
-    ck = torch.load(saved_path)
+    if DEVICE == 'cpu':
+        ck = torch.load(saved_path, map_location=torch.device('cpu'))
+    else:
+        ck = torch.load(saved_path)
 
-  return ck
+    return ck
 
 
 def alphazero_loss(policy_logits, value, target_pi, target_z, value_coef=1.0):
-    logp = F.log_softmax(policy_logits, dim=1) #(B, 65)
-    policy_loss = - torch.mean(torch.sum(target_pi * logp, dim=1))
+    log_p = F.log_softmax(policy_logits, dim=1)  # (B, 65)
+    policy_loss = - torch.mean(torch.sum(target_pi * log_p, dim=1))
     value_loss = torch.mean((value - target_z)**2)
     loss = policy_loss + value_coef * value_loss
     return loss, policy_loss.item(), value_loss.item()
 
 
 def train_step(
-        model, optimizer,
+        model: OthelloResNet, optimizer,
         replay_buffer: ReplayBuffer,
-        batch_size=TRAIN_BATCH,
+        batch_size=BATCH_SIZE,
         value_coef=VALUE_COEF,
         clip_grad=CLIP_GRAD
-    ):
+):
     if len(replay_buffer) < batch_size:
         return None
     model.train()
@@ -59,103 +71,51 @@ def train_with_mcts(
     num_iterations=NUM_ITERATIONS,
     train_steps_per_iter=TRAIN_STEPS_PER_ITER,
     eval_interval=10,
-    eval_games=100, # Increased from 50 for more reliable Elo evaluation
+    eval_games=100,
+    timer=None
 ):
     BEST_ID = "best"
     RANDOM_ID = "random"
 
     # ---- Elo init ----
-    elo_agent.ensure(RANDOM_ID)
-    elo_agent.ensure(BEST_ID)
+    elo_agent.ensure(RANDOM_ID, BEST_ID)
 
     history_policy_loss, history_value_loss = [], []
     history_rand_wr, history_elo_best, history_elo_current = [], [], []
-
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 8))
-    display.display(fig)
-    display.clear_output(wait=True)
-
-    #  tq = tqdm(range(num_iterations))
 
     for it in range(num_iterations):
         CURRENT_ID = f"current_{it}"
         elo_agent.ensure(CURRENT_ID)
 
-        # ==================================================
-        # 0. Measure strength vs random (NO buffer)
-        # ==================================================
         mcts.model.eval()
-        win_rand = 0
-        stats = duel(old_model=None, new_model=mcts.model,
-                     old_id=RANDOM_ID, new_id=CURRENT_ID,
-                     elo_agent=elo_agent)
-        n_probe = 10
+        with timed(timer, 'duel_with_random'):
+            stats = duel(None, mcts.model,
+                         id_a=RANDOM_ID, id_b=CURRENT_ID,
+                         elo_agent=elo_agent)
 
-
-
-        for _ in range(n_probe):
-            _, winner = generate_game({
-                1: {'mcts': mcts}, -1: {'mcts': None},
-            })
-            if winner == 1:
-                win_rand += 1
-
-        win_rate_random = win_rand / n_probe
+        win_rate_random = stats['win_rate_b']
         history_rand_wr.append(win_rate_random)
-
-        # ==================================================
-        # 1. Decide opponent mix
-        # ==================================================
-        if win_rate_random < 0.4:
-            p_random = 1.0
-        elif win_rate_random < 0.6:
-            p_random = 0.5
-        elif win_rate_random < 0.8:
-            p_random = 0.2
-        else:
-            p_random = 0.0
 
         # ==================================================
         # 2. Self-play / Random-play
         # ==================================================
         mcts.reset_tree()
-        t0 = time.time()
 
-        # ADDED
-        p_random = -1
+        with timed(timer, 'generate_self_play'):
+            data, _ = generate_self_play(mcts.model)
 
-        if np.random.rand() < p_random:
-            # ---------- vs Random (NO buffer) ----------
-            data, _ = generate_game({
-                1: {'mcts': mcts},
-                -1: {'mcts': None},
-            })
-        else:
-            # ---------- Self-play (buffer ON) ----------
-            data, _ = generate_game(
-                {
-                    1: {'mcts': mcts, 'record': True},
-                    -1: {'mcts': mcts, 'record': True},
-                },
-                reuse_tree=True
-            )
+        with timed(timer, 'record'):
+            for own, opp, pi, z, _ in data:
+                replay_buffer.add(own, opp, pi, z)
 
-            for own, opp, pi, z, p in data:
-                replay_buffer.add(own, opp, pi, z, p)
-
-        selfplay_time = int(time.time() - t0)
-
-        # ==================================================
-        # 3. Training
-        # ==================================================
         mcts.model.train()
-        t1 = time.time()
         train_stats = []
 
         for _ in range(train_steps_per_iter):
-            out = train_step(mcts.model, optimizer, replay_buffer)
-            if out is not None:
-                train_stats.append(out)
+            with timed(timer, 'train_step'):
+                out = train_step(mcts.model, optimizer, replay_buffer)
+                if out is not None:
+                    train_stats.append(out)
 
         pl = train_stats[-1]["policy_loss"] if train_stats else 0.0
         vl = train_stats[-1]["value_loss"] if train_stats else 0.0
@@ -163,24 +123,18 @@ def train_with_mcts(
         history_policy_loss.append(pl)
         history_value_loss.append(vl)
 
-        training_time = int(time.time() - t1)
-
-        # ==================================================
-        # 4. Evaluation vs BEST
-        # ==================================================
         if it % eval_interval != 0 or it == 0:
             continue
 
         mcts.model.eval()
 
-        stats_best = duel(
-            elo_agent,
-            old_model=best_model,
-            new_model=mcts.model,
-            old_id=BEST_ID,
-            new_id=CURRENT_ID,
-            n_games=eval_games,
-        )
+        with timed(timer, 'duel'):
+            stats_best = duel(
+                best_model, mcts.model,
+                id_a=BEST_ID, id_b=CURRENT_ID,
+                elo_agent=elo_agent,
+                n_games=eval_games,
+            )
 
         history_elo_best.append(elo_agent.elos[BEST_ID])
         history_elo_current.append(elo_agent.elos[CURRENT_ID])
@@ -215,13 +169,8 @@ def train_with_mcts(
         display.clear_output(wait=True)
         display.display(fig)
 
-
-        # ==================================================
-        # 5. Update BEST model
-        # ==================================================
         if (
-            stats_best["elo_delta_new"] > 20
-            and stats_best["win_rate_old"] < 0.45
+            stats_best["win_rate_b"] >= 0.55
             and win_rate_random > 0.8
         ):
             best_model.load_state_dict(mcts.model.state_dict())
@@ -261,16 +210,14 @@ if __name__ == "__main__":
     elo_agent = EloAgent.load_state_dict(checkpoint["elo"])
     # elo_agent = EloAgent()
     # Random Policy
-    elo_agent.elos['random'] = 1500
-    elo_agent.ensure('best')
-    elo_agent.ensure('current')
 
-    # MCTS
-    mcts = MCTS(model=model, n_sim=MCTS_SIMS, batch_eval=MCTS_BATCH)
+    elo_agent.ensure('best', 'current', 'random')
+
+    mcts = MCTS(model=model, n_sim=MCTS_SIMS, batch_eval=BATCH_SIZE)
 
     # warm up: do a small self-play to fill buffer a bit (optional)
     print('Warm-up replay buffer...')
-    while len(buffer) < TRAIN_BATCH:
+    while len(buffer) < BATCH_SIZE:
         data, _ = generate_game({
             1: {'mcts': mcts}, -1: {'mcts': mcts}
         })

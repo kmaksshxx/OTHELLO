@@ -10,7 +10,7 @@ with open(config_path) as f:
     config = yaml.safe_load(f)
 
 MCTS_SIMS = config['MCTS']['N_SIMS']
-MCTS_BATCH = config['MCTS']['BATCH_SIZE']
+BATCH_SIZE = config['BATCH_SIZE']
 MAX_DEPTH = config['MAX_DEPTH']
 MAX_NODE = config['MCTS']['MAX_NODE']
 default_model = OthelloResNet()
@@ -113,10 +113,13 @@ def popcount(x: int):
 
 
 class MCTS:
-    def __init__(self, model, c_puct=1.5, n_sim=MCTS_SIMS,
-                 batch_eval=MCTS_BATCH, dirichlet_alpha=0.3, dirichlet_epsilon=0.25,
+    def __init__(self, model: OthelloResNet, c_puct=1.5, n_sim=MCTS_SIMS,
+                 batch_eval=BATCH_SIZE, dirichlet_alpha=0.3, dirichlet_epsilon=0.25,
                  max_nodes=MAX_NODE, device=DEVICE, add_noise=True):
         self.model = model
+        self.model.to(DEVICE)
+        self.model.eval()
+
         self.c_puct = c_puct
         self.n_sim = n_sim
         self.batch_eval = batch_eval
@@ -233,6 +236,8 @@ class MCTS:
 
     def search(self, own, opp, n_sim=None, last_action: Optional[int] = None,
                timer=None):
+        self.model.eval()
+
         if n_sim is None:
             n_sim = self.n_sim
 
@@ -417,7 +422,7 @@ class MCTS:
 
 
 if __name__ == '__main__':
-    mcts = MCTS(default_model, n_sim=MCTS_SIMS, batch_eval=MCTS_BATCH)
+    mcts = MCTS(default_model, n_sim=MCTS_SIMS, batch_eval=BATCH_SIZE)
     timer = SectionTimer('MCTS')
     own, opp = init_board()
     mcts.search(own, opp, timer=timer)

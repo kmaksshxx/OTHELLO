@@ -7,13 +7,8 @@ class ReplayBuffer:
         self.ptr = 0
         self.size = 0
 
-        # self.state_buffer = np.zeros(
-        #     (max_size, 2, BOARD_SIZE, BOARD_SIZE),
-        #     dtype=np.float32
-        # )
-
-        self.own_buffer = np.zeros(max_size, dtype=np.int8)
-        self.opp_buffer = np.zeros(max_size, dtype=np.int8)
+        self.own_buffer = np.zeros(max_size, dtype=np.int64)
+        self.opp_buffer = np.zeros(max_size, dtype=np.int64)
 
         self.pi_buffer = np.zeros((max_size, ACTION_SIZE), dtype=np.float32)
         self.z_buffer = np.zeros(max_size, dtype=np.float32)
@@ -33,7 +28,9 @@ class ReplayBuffer:
         if self.size < self.max_size:
             self.size += 1
 
-    def sample(self, batch_size, recent_frac=0.3, recent_prob=0.5):
+    def sample(self, batch_size, recent_frac=0.3, recent_prob=0.5) -> Tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor
+    ]:
         if self.size == 0:
             raise RuntimeError("Replay buffer is empty")
 

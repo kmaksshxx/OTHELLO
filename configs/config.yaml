@@ -12,5 +12,4 @@ train_param:
 
 MCTS:
   N_SIMS: 800
-  BATCH_SIZE: 64
   MAX_NODE: 50000
