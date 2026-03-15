@@ -7,8 +7,8 @@ class ReplayBuffer:
         self.ptr = 0
         self.size = 0
 
-        self.own_buffer = np.zeros(max_size, dtype=np.int64)
-        self.opp_buffer = np.zeros(max_size, dtype=np.int64)
+        self.own_buffer = np.zeros(max_size, dtype=np.uint64)
+        self.opp_buffer = np.zeros(max_size, dtype=np.uint64)
 
         self.pi_buffer = np.zeros((max_size, ACTION_SIZE), dtype=np.float32)
         self.z_buffer = np.zeros(max_size, dtype=np.float32)
@@ -17,8 +17,9 @@ class ReplayBuffer:
         return self.size
 
     def add(self, own: int, opp: int, pi: np.ndarray, z: float):
+        # assert own < 2 ** 64 and opp < 2 ** 64
         idx = self.ptr % self.max_size
-        # self.state_buffer[idx] = state.astype(np.float32)
+
         self.own_buffer[idx] = own
         self.opp_buffer[idx] = opp
         self.pi_buffer[idx] = pi
@@ -77,50 +78,50 @@ class ReplayBuffer:
         return states, pis, zs
 
 
-    # def soft_reset(self, keep_frac=0.4):
-    #     """
-    #     Keep only the most recent keep_frac portion of the buffer.
-    #     Old data are discarded. Pointer and size are updated accordingly.
-    #     """
+# def soft_reset(self, keep_frac=0.4):
+#     """
+#     Keep only the most recent keep_frac portion of the buffer.
+#     Old data are discarded. Pointer and size are updated accordingly.
+#     """
 
-    #     if self.size == 0:
-    #         return
+#     if self.size == 0:
+#         return
 
-    #     keep_size = max(int(self.size * keep_frac), 1)
+#     keep_size = max(int(self.size * keep_frac), 1)
 
-    #     # recent data start index (ring buffer aware)
-    #     start = (self.ptr - keep_size) % self.max_size
+#     # recent data start index (ring buffer aware)
+#     start = (self.ptr - keep_size) % self.max_size
 
-    #     if start + keep_size <= self.max_size:
-    #         # contiguous case
-    #         states = self.state_buffer[start:start + keep_size].copy()
-    #         pis = self.pi_buffer[start:start + keep_size].copy()
-    #         zs = self.z_buffer[start:start + keep_size].copy()
-    #     else:
-    #         # wrapped case
-    #         first_len = self.max_size - start
-    #         second_len = keep_size - first_len
+#     if start + keep_size <= self.max_size:
+#         # contiguous case
+#         states = self.state_buffer[start:start + keep_size].copy()
+#         pis = self.pi_buffer[start:start + keep_size].copy()
+#         zs = self.z_buffer[start:start + keep_size].copy()
+#     else:
+#         # wrapped case
+#         first_len = self.max_size - start
+#         second_len = keep_size - first_len
 
-    #         states = np.concatenate([
-    #             self.state_buffer[start:].copy(),
-    #             self.state_buffer[:second_len].copy()
-    #         ], axis=0)
+#         states = np.concatenate([
+#             self.state_buffer[start:].copy(),
+#             self.state_buffer[:second_len].copy()
+#         ], axis=0)
 
-    #         pis = np.concatenate([
-    #             self.pi_buffer[start:].copy(),
-    #             self.pi_buffer[:second_len].copy()
-    #         ], axis=0)
+#         pis = np.concatenate([
+#             self.pi_buffer[start:].copy(),
+#             self.pi_buffer[:second_len].copy()
+#         ], axis=0)
 
-    #         zs = np.concatenate([
-    #             self.z_buffer[start:].copy(),
-    #             self.z_buffer[:second_len].copy()
-    #         ], axis=0)
+#         zs = np.concatenate([
+#             self.z_buffer[start:].copy(),
+#             self.z_buffer[:second_len].copy()
+#         ], axis=0)
 
-    #     # overwrite buffer front
-    #     self.state_buffer[:keep_size] = states
-    #     self.pi_buffer[:keep_size] = pis
-    #     self.z_buffer[:keep_size] = zs
+#     # overwrite buffer front
+#     self.state_buffer[:keep_size] = states
+#     self.pi_buffer[:keep_size] = pis
+#     self.z_buffer[:keep_size] = zs
 
-    #     self.size = keep_size
-    #     self.ptr = keep_size
+#     self.size = keep_size
+#     self.ptr = keep_size
 

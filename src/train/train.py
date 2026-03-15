@@ -76,12 +76,10 @@ def train_with_mcts(
 ):
     BEST_ID = "best"
     RANDOM_ID = "random"
-
-    # ---- Elo init ----
     elo_agent.ensure(RANDOM_ID, BEST_ID)
 
-    history_policy_loss, history_value_loss = [], []
-    history_rand_wr, history_elo_best, history_elo_current = [], [], []
+    if timer:
+        timer.reset('current_0')
 
     for it in range(num_iterations):
         CURRENT_ID = f"current_{it}"
@@ -94,11 +92,7 @@ def train_with_mcts(
                          elo_agent=elo_agent)
 
         win_rate_random = stats['win_rate_b']
-        history_rand_wr.append(win_rate_random)
 
-        # ==================================================
-        # 2. Self-play / Random-play
-        # ==================================================
         mcts.reset_tree()
 
         with timed(timer, 'generate_self_play'):
@@ -120,9 +114,6 @@ def train_with_mcts(
         pl = train_stats[-1]["policy_loss"] if train_stats else 0.0
         vl = train_stats[-1]["value_loss"] if train_stats else 0.0
 
-        history_policy_loss.append(pl)
-        history_value_loss.append(vl)
-
         if it % eval_interval != 0 or it == 0:
             continue
 
@@ -136,38 +127,17 @@ def train_with_mcts(
                 n_games=eval_games,
             )
 
-        history_elo_best.append(elo_agent.elos[BEST_ID])
-        history_elo_current.append(elo_agent.elos[CURRENT_ID])
+        timer.report()
+        print(
+            f'win rate random: {win_rate_random:.1f} | '
+            f'pl: {pl:.2f} | '
+            f'vl: {vl:.2f} | '
+            f'best elo: {int(elo_agent.elos[BEST_ID])} | '
+            f'current elo: {int(elo_agent.elos[CURRENT_ID])}'
+        )
 
-        # Plotting section
-        ax1.clear()
-        ax2.clear()
-        ax3.clear()
-
-        ax1.plot(range(len(history_policy_loss)), history_policy_loss, label='Policy Loss')
-        ax1.plot(range(len(history_value_loss)), history_value_loss, label='Value Loss')
-        ax1.set_xlabel('Training Steps')
-        ax1.set_ylabel('Loss')
-        ax1.set_title('Policy and Value Loss Over Training Steps')
-        ax1.legend()
-
-        ax2.plot(range(len(history_rand_wr)), history_rand_wr, label='Random Win Rate', color='orange')
-        ax2.set_xlabel('Iterations')
-        ax2.set_ylabel('Win Rate')
-        ax2.set_title('Win Rate Against Random Player')
-        ax2.legend()
-
-        ax3.plot(range(len(history_elo_best)), history_elo_best, label='Best Model Elo', color='green')
-        ax3.plot(range(len(history_elo_current)), history_elo_current, label='Current Model Elo', color='red')
-        ax3.set_xlabel('Iterations (Evaluation Points)')
-        ax3.set_ylabel('Elo Rating')
-        ax3.set_title('Elo Ratings Over Iterations')
-        ax3.legend()
-
-        fig.suptitle(f'Training Progress (Iteration {it})')
-        fig.tight_layout(rect=(0, 0.03, 1, 0.95)) # Adjust layout to prevent title overlap
-        display.clear_output(wait=True)
-        display.display(fig)
+        if timer:
+            timer.reset(CURRENT_ID)
 
         if (
             stats_best["win_rate_b"] >= 0.55
@@ -177,22 +147,18 @@ def train_with_mcts(
             elo_agent.elos[BEST_ID] = elo_agent.elos[CURRENT_ID]
             print("✅ Updated BEST model")
 
-        # ==================================================
-        # 6. Plateau handling
-        # ==================================================
         # if stats_best["plateau"]:
         #     replay_buffer.soft_reset()
 
         save_checkpoint(mcts.model, best_model, optimizer, elo_agent)
     return mcts.model
 
-#@title MAIN
 
 if __name__ == "__main__":
     buffer = ReplayBuffer()
     checkpoint = load_checkpoint()
 
-    # Models & Optimzer
+    # Models & Optimizer
     model = OthelloResNet(num_blocks=4, channels=64)
     model.load_state_dict(checkpoint['model'])
     model.to(DEVICE)
@@ -218,11 +184,9 @@ if __name__ == "__main__":
     # warm up: do a small self-play to fill buffer a bit (optional)
     print('Warm-up replay buffer...')
     while len(buffer) < BATCH_SIZE:
-        data, _ = generate_game({
-            1: {'mcts': mcts}, -1: {'mcts': mcts}
-        })
-        for s, pi, z, p in data:
-            buffer.add(s, pi, z, p)
+        data, _ = generate_self_play(model)
+        for own, opp, pi, z, _ in data:
+            buffer.add(own, opp, pi, z)
 
     # start training
     trained_model = train_with_mcts(
@@ -231,6 +195,7 @@ if __name__ == "__main__":
         train_steps_per_iter=20,
         eval_interval=10,
         eval_games=100,
+        timer=timer
     )
 
 # GPU : selfplay=421, train=1

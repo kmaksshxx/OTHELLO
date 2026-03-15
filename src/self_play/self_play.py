@@ -15,6 +15,7 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
 
     pass_count = 0
     own, opp = init_board()
+    player = 1
     last_action = None
     mcts = MCTS(model)
 
