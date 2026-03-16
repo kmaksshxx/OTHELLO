@@ -191,18 +191,21 @@ def duel(model_a, model_b,
         id_b = 'random'
 
     for i in range(n_games):
-        if i % 2 == 0:
-            winner = generate_game({1: model_a, -1: model_b}, n_sim=n_sim)
-            color_a = 1
+        with timed(timer, 'generate_game'):
+            if i % 2 == 0:
+                winner = generate_game({1: model_a, -1: model_b}, n_sim=n_sim)
+                color_a = 1
 
-        else:
-            winner = generate_game({1: model_b, -1: model_a}, n_sim=n_sim)
-            color_a = -1
+            else:
+                winner = generate_game({1: model_b, -1: model_a}, n_sim=n_sim)
+                color_a = -1
 
         result_a = 1.0 if winner == color_a else 0.5 if winner == 0 else 0.0
         stats['history_a'] += result_a
-        delta = elo_agent.update_game(id_a, id_b, result_a)
-        total_elo_delta_new += delta
+
+        with timed(timer, 'update_game'):
+            delta = elo_agent.update_game(id_a, id_b, result_a)
+            total_elo_delta_new += delta
 
     stats['win_rate_a'] = stats['history_a'] / n_games
     stats['win_rate_b'] = 1 - stats['win_rate_a']
@@ -218,78 +221,7 @@ def duel(model_a, model_b,
 
 
 if __name__ == "__main__":
-    with timed(timer, 'duel'):
-        duel(default_model, default_model)
-
+    duel(default_model, None, n_games=1)
+    duel(default_model, None, timer=timer, n_games=100)
     timer.report()
 
-'''
-def generate_duel_play(model_a: OthelloResNet,
-                       model_b: OthelloResNet,
-                       n_sim=50,
-                       max_moves=128,
-                       timer=None) -> int:
-    """
-    Duel with Two Models.
-
-    Returns
-      - winner
-    """
-
-    mcts_a = MCTS(model=model_a, add_noise=False, n_sim=n_sim)
-    mcts_b = MCTS(model=model_b, add_noise=False, n_sim=n_sim)
-
-    own, opp = init_board()
-    player = 1
-    pass_count = 0
-
-    for move in range(max_moves):
-        mcts = mcts_a if player == 1 else mcts_b
-        pi = mcts.search(own, opp, timer=timer)
-        action = select_action_from_pi(pi, 0)
-
-        own, opp = apply_move_bitboard(own, opp, action)
-        own, opp = opp, own
-        player = -player
-
-        pass_count = pass_count + 1 if action == PASS_ACTION else 0
-
-        if pass_count == 2:
-            break
-
-    diff = popcount(own) - popcount(opp)
-    winner = player if diff > 0 else -player if diff < 0 else 0
-    return winner
-
-
-def generate_random_play(model: OthelloResNet,
-                         model_player: int = 1,
-                         n_sim=50,
-                         max_moves=128,
-                         timer=None) -> int:
-    assert model_player in (1, -1)
-
-    own, opp = init_board()
-    pass_count = 0
-    mcts = MCTS(model, n_sim=n_sim, add_noise=False)
-
-    if model_player == -1:
-        legal = get_legal_board(own, opp)
-        action = np.random.choice(legal)
-        own, opp = apply_move_bitboard(own, opp, action)
-        own, opp = opp, own
-
-    while True:
-        pi = mcts.search(own, opp)
-        action = select_action_from_pi(pi, 0)
-        own, opp = apply_move_bitboard(own, opp, action)
-        own, opp = opp, own
-
-        pass_count = pass_count + 1 if action == PASS_ACTION else 0
-        if pass_count == 2:
-            break
-
-        action = np.random.choice(get_legal_board(own, opp))
-        own, opp = apply_move_bitboard(own, opp, action)
-        own, opp = opp, own
-'''

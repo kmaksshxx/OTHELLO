@@ -9,8 +9,10 @@ VALUE_COEF = train_param['VALUE_COEF']
 CLIP_GRAD = train_param['CLIP_GRAD']
 LR = train_param['LR']
 WEIGHT_DECAY = train_param['WEIGHT_DECAY']
+TRAIN_STEPS_PER_ITER = train_param['TRAIN_STEPS_PER_ITER']
+N_GAMES = train_param['N_GAMES']
+
 NUM_ITERATIONS = 5000
-TRAIN_STEPS_PER_ITER = 20
 
 
 def save_checkpoint(model, best_model, optimizer, elo_tracker):
@@ -24,9 +26,9 @@ def save_checkpoint(model, best_model, optimizer, elo_tracker):
 
 def load_checkpoint():
     if DEVICE == 'cpu':
-        ck = torch.load(saved_path, map_location=torch.device('cpu'))
+        ck = torch.load(saved_path, map_location=torch.device('cpu'), weights_only=False)
     else:
-        ck = torch.load(saved_path)
+        ck = torch.load(saved_path, weights_only=False)
 
     return ck
 
@@ -63,95 +65,84 @@ def train_step(
 
 
 def train_with_mcts(
-    best_model,
-    mcts: MCTS,
+    best_model: OthelloResNet, model: OthelloResNet,
     replay_buffer: ReplayBuffer,
     optimizer,
     elo_agent: EloAgent,
     num_iterations=NUM_ITERATIONS,
     train_steps_per_iter=TRAIN_STEPS_PER_ITER,
     eval_interval=10,
-    eval_games=100,
+    n_games=N_GAMES,
     timer=None
 ):
     BEST_ID = "best"
     RANDOM_ID = "random"
-    elo_agent.ensure(RANDOM_ID, BEST_ID)
 
     if timer:
         timer.reset('current_0')
 
     for it in range(num_iterations):
         CURRENT_ID = f"current_{it}"
-        elo_agent.ensure(CURRENT_ID)
 
-        mcts.model.eval()
         with timed(timer, 'duel_with_random'):
-            stats = duel(None, mcts.model,
+            model.eval()
+            stats = duel(None, model,
                          id_a=RANDOM_ID, id_b=CURRENT_ID,
                          elo_agent=elo_agent)
 
-        win_rate_random = stats['win_rate_b']
+            win_rate_random = stats['win_rate_b']
 
-        mcts.reset_tree()
-
-        with timed(timer, 'generate_self_play'):
-            data, _ = generate_self_play(mcts.model)
-
-        with timed(timer, 'record'):
-            for own, opp, pi, z, _ in data:
-                replay_buffer.add(own, opp, pi, z)
-
-        mcts.model.train()
         train_stats = []
-
         for _ in range(train_steps_per_iter):
+            with timed(timer, 'generate_self_play'):
+                model.eval()
+                data, _ = generate_self_play(model)
+                for own, opp, pi, z, _ in data:
+                    replay_buffer.add(own, opp, pi, z)
+
             with timed(timer, 'train_step'):
-                out = train_step(mcts.model, optimizer, replay_buffer)
+                model.train()
+                out = train_step(model, optimizer, replay_buffer)
                 if out is not None:
                     train_stats.append(out)
 
-        pl = train_stats[-1]["policy_loss"] if train_stats else 0.0
-        vl = train_stats[-1]["value_loss"] if train_stats else 0.0
+        pl = np.mean([s["policy_loss"] for s in train_stats])
+        vl = np.mean([s["value_loss"] for s in train_stats])
 
         if it % eval_interval != 0 or it == 0:
             continue
 
-        mcts.model.eval()
-
         with timed(timer, 'duel'):
+            model.eval()
             stats_best = duel(
-                best_model, mcts.model,
+                best_model, model,
                 id_a=BEST_ID, id_b=CURRENT_ID,
                 elo_agent=elo_agent,
-                n_games=eval_games,
+                n_games=n_games,
             )
-
-        timer.report()
-        print(
-            f'win rate random: {win_rate_random:.1f} | '
-            f'pl: {pl:.2f} | '
-            f'vl: {vl:.2f} | '
-            f'best elo: {int(elo_agent.elos[BEST_ID])} | '
-            f'current elo: {int(elo_agent.elos[CURRENT_ID])}'
-        )
-
-        if timer:
-            timer.reset(CURRENT_ID)
 
         if (
             stats_best["win_rate_b"] >= 0.55
             and win_rate_random > 0.8
         ):
-            best_model.load_state_dict(mcts.model.state_dict())
+            best_model.load_state_dict(model.state_dict())
             elo_agent.elos[BEST_ID] = elo_agent.elos[CURRENT_ID]
             print("✅ Updated BEST model")
 
-        # if stats_best["plateau"]:
-        #     replay_buffer.soft_reset()
+        save_checkpoint(model, best_model, optimizer, elo_agent)
 
-        save_checkpoint(mcts.model, best_model, optimizer, elo_agent)
-    return mcts.model
+        timer.report()
+        print(
+            f'\nwin rate random: {win_rate_random:.1f} |',
+            f'pl: {pl:.2f} |',
+            f'vl: {vl:.2f} |',
+            f'best elo: {int(elo_agent.elos[BEST_ID])} |',
+            f'current elo: {int(elo_agent.elos[CURRENT_ID])}\n'
+        )
+
+        if timer:
+            timer.reset(CURRENT_ID)
+    return model
 
 
 if __name__ == "__main__":
@@ -162,7 +153,6 @@ if __name__ == "__main__":
     model = OthelloResNet(num_blocks=4, channels=64)
     model.load_state_dict(checkpoint['model'])
     model.to(DEVICE)
-    model.train()
 
     best_model = OthelloResNet(num_blocks=4, channels=64)
     best_model.load_state_dict(checkpoint['best_model'])
@@ -172,32 +162,18 @@ if __name__ == "__main__":
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     optimizer.load_state_dict(checkpoint['optimizer'])
 
-    # EloAgent
-    elo_agent = EloAgent.load_state_dict(checkpoint["elo"])
-    # elo_agent = EloAgent()
-    # Random Policy
+    # elo_agent = EloAgent.load_state_dict(checkpoint["elo"])
+    elo_agent = EloAgent()
 
-    elo_agent.ensure('best', 'current', 'random')
-
-    mcts = MCTS(model=model, n_sim=MCTS_SIMS, batch_eval=BATCH_SIZE)
-
-    # warm up: do a small self-play to fill buffer a bit (optional)
     print('Warm-up replay buffer...')
     while len(buffer) < BATCH_SIZE:
         data, _ = generate_self_play(model)
         for own, opp, pi, z, _ in data:
             buffer.add(own, opp, pi, z)
 
-    # start training
+    print('start training...')
     trained_model = train_with_mcts(
-        best_model, mcts, buffer, optimizer, elo_agent,
-        num_iterations=5000,
-        train_steps_per_iter=20,
-        eval_interval=10,
-        eval_games=100,
+        best_model, model, buffer, optimizer, elo_agent,
+        eval_interval=1,
         timer=timer
     )
-
-# GPU : selfplay=421, train=1
-# CPU : selfplay=31, train=7
-
