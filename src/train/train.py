@@ -163,11 +163,10 @@ if __name__ == "__main__":
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     optimizer.load_state_dict(checkpoint['optimizer'])
 
-    # elo_agent = EloAgent.load_state_dict(checkpoint["elo"])
-    elo_agent = EloAgent()
+    elo_agent = EloAgent.load_state_dict(checkpoint["elo"])
 
     print('Warm-up replay buffer...')
-    while len(buffer) < BATCH_SIZE:
+    while len(buffer) < BATCH_SIZE * 100:
         data, _ = generate_self_play(model)
         for own, opp, pi, z, _ in data:
             buffer.add(own, opp, pi, z)

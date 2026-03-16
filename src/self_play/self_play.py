@@ -20,7 +20,7 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
     mcts = MCTS(model)
 
     for move in range(max_moves):
-        n_sim = 800 if move < 10 else 400 if move < 30 else 200
+        n_sim = 400 if move < 12 else 200 if move < 40 else 100
         temperature = 1.0 if move < 10 else 0.1 if move < 30 else 0
 
         with timed(timer, 'search'):
