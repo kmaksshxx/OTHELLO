@@ -102,9 +102,10 @@ def train_with_mcts(
 
             with timed(timer, 'train_step'):
                 model.train()
-                out = train_step(model, optimizer, replay_buffer)
-                if out is not None:
-                    train_stats.append(out)
+                for _ in range(10):
+                    out = train_step(model, optimizer, replay_buffer)
+                    if out is not None:
+                        train_stats.append(out)
 
         pl = np.mean([s["policy_loss"] for s in train_stats])
         vl = np.mean([s["value_loss"] for s in train_stats])
