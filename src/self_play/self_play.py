@@ -1,5 +1,6 @@
 from src.mcts.mcts import *
 from collections import deque
+from multiprocessing import Pool
 
 
 def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
@@ -52,6 +53,39 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
             results.append((_own, _opp, pi, z, p))
 
     return results, winner
+
+
+def selfplay_worker(args):
+    model_state, max_moves = args
+
+    model = OthelloResNet()
+    model.load_state_dict(model_state)
+    model.eval()
+
+    results, winner = generate_self_play(model, max_moves)
+
+    return results
+
+
+def generate_self_play_parallel(
+        model,
+        n_games=32,
+        n_workers=8,
+        max_moves=128
+):
+
+    model_state = model.state_dict()
+
+    args = [(model_state, max_moves) for _ in range(n_games)]
+
+    dataset = []
+
+    with Pool(n_workers) as pool:
+
+        for results in pool.imap_unordered(selfplay_worker, args):
+            dataset.extend(results)
+
+    return dataset
 
 
 def generate_game(policy_by_player: dict,
@@ -221,7 +255,16 @@ def duel(model_a, model_b,
 
 
 if __name__ == "__main__":
-    duel(default_model, None, n_games=1)
-    duel(default_model, None, timer=timer, n_games=100)
+    generate_self_play(default_model)
+
+    for _ in range(8):
+        with timed(timer, 'A'):
+            datax = generate_self_play(default_model)
+
+    with timed(timer, 'multi'):
+        data = generate_self_play_parallel(default_model, n_games=8)
+
     timer.report()
+
+    breakpoint()
 
