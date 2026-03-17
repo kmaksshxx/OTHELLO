@@ -13,7 +13,9 @@ MCTS_SIMS = config['MCTS']['N_SIMS']
 BATCH_SIZE = config['BATCH_SIZE']
 MAX_DEPTH = config['MAX_DEPTH']
 MAX_NODE = config['MCTS']['MAX_NODE']
+
 default_model = OthelloResNet()
+default_model.to(DEVICE)
 
 
 @nb.njit

@@ -1,12 +1,25 @@
-from src.mcts.mcts import *
+from src.train.train import *
+
+ck = load_checkpoint()
+
+default_model.load_state_dict(ck['model'])
+
+mcts = MCTS(default_model, n_sim=50)
 
 own, opp = init_board()
-
 player = 1
-pass_count = 0
+pass_count = 1
+action = None
 
 while True:
-    action = get_random_action(own, opp)
+    pi = mcts.search(own, opp, last_action=action)
+    action = select_action_from_pi(pi, 1.0)
+    inp = bitboard_to_input(own, opp)
+    inp_t = torch.from_numpy(inp).unsqueeze(0)
+
+    x, y = default_model(inp_t)
+    print(y.squeeze())
+
     own, opp = apply_move_bitboard(own, opp, action)
     own, opp = opp, own
     player = -player
@@ -15,10 +28,6 @@ while True:
     if pass_count == 2:
         break
 
-diff = popcount(own) - popcount(opp)
-winner = player if diff > 0 else -player if diff < 0 else 0
-print(winner)
-render(own, opp, player)
 
 
 
