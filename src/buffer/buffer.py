@@ -5,7 +5,6 @@ class ReplayBuffer:
     def __init__(self, max_size=100_000):
         self.max_size = max_size
         self.ptr = 0
-        self.size = 0
 
         self.own_buffer = np.zeros(max_size, dtype=np.uint64)
         self.opp_buffer = np.zeros(max_size, dtype=np.uint64)
@@ -13,7 +12,24 @@ class ReplayBuffer:
         self.z_buffer = np.zeros(max_size, dtype=np.float32)
 
     def __len__(self):
-        return self.size
+        return min(self.max_size, self.ptr)
+
+    def return_state(self):
+        return (
+            self.max_size, self.ptr,
+            self.own_buffer, self.opp_buffer,
+            self.pi_buffer, self.z_buffer
+        )
+
+    @classmethod
+    def load_state(cls, state):
+        tracker = cls(state[0])
+        tracker.ptr = state[1]
+        tracker.own_buffer = state[2]
+        tracker.opp_buffer = state[3]
+        tracker.pi_buffer = state[4]
+        tracker.z_buffer = state[5]
+        return tracker
 
     def add(self, own: int, opp: int, pi: np.ndarray, z: float):
         # assert own < 2 ** 64 and opp < 2 ** 64
@@ -25,16 +41,15 @@ class ReplayBuffer:
         self.z_buffer[idx] = z
 
         self.ptr += 1
-        if self.size < self.max_size:
-            self.size += 1
 
     def sample(self, batch_size, recent_frac=0.3, recent_prob=0.5) -> Tuple[
         torch.Tensor, torch.Tensor, torch.Tensor
     ]:
-        if self.size == 0:
+        size = self.__len__()
+        if size == 0:
             raise RuntimeError("Replay buffer is empty")
 
-        recent_size = int(self.size * recent_frac)
+        recent_size = int(size * recent_frac)
         recent_start = (self.ptr - recent_size) % self.max_size
 
         idxs = []
@@ -48,7 +63,7 @@ class ReplayBuffer:
             idxs.append((recent_start + offset) % self.max_size)
 
         # uniform sampling
-        idxs.extend(np.random.randint(0, self.size, size=n_uniform))
+        idxs.extend(np.random.randint(0, size, size=n_uniform))
 
         idxs = np.array(idxs, dtype=np.int64)
 
@@ -60,19 +75,19 @@ class ReplayBuffer:
             dtype=np.float32
         )
 
-        if DEVICE == 'cuda':
-            states = torch.from_numpy(states_numpy).pin_memory()
-            states = states.to(DEVICE, non_blocking=True)
-
-            pis = torch.from_numpy(self.pi_buffer[idxs]).pin_memory()
-            pis = pis.to(DEVICE, non_blocking=True)
-
-            zs = torch.from_numpy(self.z_buffer[idxs]).pin_memory()
-            zs = zs.to(DEVICE, non_blocking=True)
-        else:
-            states = torch.from_numpy(states_numpy)
-            pis = torch.from_numpy(self.pi_buffer[idxs]).to(DEVICE)
-            zs = torch.from_numpy(self.z_buffer[idxs]).to(DEVICE)
+        # if DEVICE == 'cuda':
+        #     states = torch.from_numpy(states_numpy).pin_memory()
+        #     states = states.to(DEVICE, non_blocking=True)
+        #
+        #     pis = torch.from_numpy(self.pi_buffer[idxs]).pin_memory()
+        #     pis = pis.to(DEVICE, non_blocking=True)
+        #
+        #     zs = torch.from_numpy(self.z_buffer[idxs]).pin_memory()
+        #     zs = zs.to(DEVICE, non_blocking=True)
+        # else:
+        states = torch.from_numpy(states_numpy)
+        pis = torch.from_numpy(self.pi_buffer[idxs]).to(DEVICE)
+        zs = torch.from_numpy(self.z_buffer[idxs]).to(DEVICE)
 
         return states, pis, zs
 

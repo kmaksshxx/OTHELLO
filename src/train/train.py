@@ -25,6 +25,10 @@ def save_checkpoint(model, best_model, optimizer, elo_tracker):
     }, saved_path)
 
 
+def save_state(state):
+    torch.save({'state': state}, state_path)
+
+
 def load_checkpoint():
     if DEVICE == 'cpu':
         ck = torch.load(saved_path, map_location=torch.device('cpu'), weights_only=False)
@@ -32,6 +36,11 @@ def load_checkpoint():
         ck = torch.load(saved_path, weights_only=False)
 
     return ck
+
+
+def load_state():
+    ck = torch.load(state_path, weights_only=False)
+    return ck['state']
 
 
 def alphazero_loss(policy_logits, value, target_pi, target_z, value_coef=1.0):
@@ -100,7 +109,6 @@ def train_with_mcts(
         train_stats = []
         for _ in range(train_steps_per_iter):
             with timed(timer, 'generate_self_play'):
-                model.eval()
                 data, _ = generate_self_play(model)
                 for own, opp, pi, z, _ in data:
                     replay_buffer.add(own, opp, pi, z)
@@ -119,7 +127,6 @@ def train_with_mcts(
             continue
 
         with timed(timer, 'duel'):
-            model.eval()
             stats_best = duel(
                 best_model, model,
                 id_a=BEST_ID, id_b=CURRENT_ID,
@@ -136,6 +143,7 @@ def train_with_mcts(
             print("✅ Updated BEST model")
 
         save_checkpoint(model, best_model, optimizer, elo_agent)
+        save_state(buffer.return_state())
 
         timer.report()
         print(
@@ -152,23 +160,38 @@ def train_with_mcts(
 
 
 if __name__ == "__main__":
-    buffer = ReplayBuffer()
-    checkpoint = load_checkpoint()
-
     # Models & Optimizer
     model = OthelloResNet(num_blocks=4, channels=64)
-    model.load_state_dict(checkpoint['model'])
     model.to(DEVICE)
 
     best_model = OthelloResNet(num_blocks=4, channels=64)
-    best_model.load_state_dict(checkpoint['best_model'])
     best_model.to(DEVICE)
-    best_model.eval()
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-    optimizer.load_state_dict(checkpoint['optimizer'])
 
-    elo_agent = EloAgent.load_state_dict(checkpoint["elo"])
+    # load checkpoint
+    try:
+        checkpoint = load_checkpoint()
+        model.load_state_dict(checkpoint['model'])
+        best_model.load_state_dict(checkpoint['best_model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        elo_agent = EloAgent.load_state_dict(checkpoint["elo"])
+        print('Checkpoint Loaded')
+
+    except Exception as e:
+        print(e)
+        elo_agent = EloAgent()
+        print('Checkpoint Not Loaded')
+
+    try:
+        state = load_state()
+        buffer = ReplayBuffer.load_state(state)
+        print('State Loaded')
+
+    except Exception as e:
+        print(e)
+        buffer = ReplayBuffer()
+        print('State Not Loaded')
 
     print('Warm-up replay buffer...')
     while len(buffer) < BATCH_SIZE * 100:
