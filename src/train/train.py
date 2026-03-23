@@ -25,7 +25,8 @@ def save_checkpoint(model, best_model, optimizer, elo_tracker):
     }, saved_path)
 
 
-def save_state(state):
+def save_state(buffer: ReplayBuffer):
+    state = buffer.return_state()
     torch.save({'state': state}, state_path)
 
 
@@ -143,7 +144,7 @@ def train_with_mcts(
             print("✅ Updated BEST model")
 
         save_checkpoint(model, best_model, optimizer, elo_agent)
-        save_state(buffer.return_state())
+        save_state(buffer)
 
         timer.report()
         print(
