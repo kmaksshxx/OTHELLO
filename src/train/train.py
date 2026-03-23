@@ -3,6 +3,7 @@ from src.buffer.buffer import ReplayBuffer
 import torch.nn.functional as F
 
 saved_path = ROOT / 'checkpoint' / 'checkpoint.tar'
+state_path = ROOT / 'checkpoint' / 'checkpoint_state.tar'
 
 train_param = config['train_param']
 VALUE_COEF = train_param['VALUE_COEF']
@@ -34,6 +35,12 @@ def load_checkpoint():
 
 
 def alphazero_loss(policy_logits, value, target_pi, target_z, value_coef=1.0):
+    """
+    Calculate loss
+
+    Returns
+      - loss, policy_loss, value_loss
+    """
     log_p = F.log_softmax(policy_logits, dim=1)  # (B, 65)
     policy_loss = - torch.mean(torch.sum(target_pi * log_p, dim=1))
     value_loss = torch.mean((value - target_z)**2)
@@ -50,7 +57,6 @@ def train_step(
 ):
     if len(replay_buffer) < batch_size:
         return None
-    model.train()
     states, pis, zs = replay_buffer.sample(batch_size)
     policy_logits, values = model(states)
     loss, pl, vl = alphazero_loss(
@@ -85,7 +91,6 @@ def train_with_mcts(
         CURRENT_ID = f"current_{it}"
 
         with timed(timer, 'duel_with_random'):
-            model.eval()
             stats = duel(None, model,
                          id_a=RANDOM_ID, id_b=CURRENT_ID,
                          elo_agent=elo_agent)

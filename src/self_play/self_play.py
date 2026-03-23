@@ -60,7 +60,6 @@ def selfplay_worker(args):
 
     model = OthelloResNet()
     model.load_state_dict(model_state)
-    model.eval()
 
     results, winner = generate_self_play(model, max_moves)
 
@@ -88,8 +87,7 @@ def generate_self_play_parallel(
     return dataset
 
 
-def generate_game(policy_by_player: dict,
-                  n_sim=50) -> int:
+def generate_game(policy_by_player: dict, n_sim=50) -> int:
     """
     Duel with two models.
 
@@ -265,6 +263,4 @@ if __name__ == "__main__":
         data = generate_self_play_parallel(default_model, n_games=8)
 
     timer.report()
-
-    breakpoint()
 
