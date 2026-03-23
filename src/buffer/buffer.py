@@ -9,7 +9,6 @@ class ReplayBuffer:
 
         self.own_buffer = np.zeros(max_size, dtype=np.uint64)
         self.opp_buffer = np.zeros(max_size, dtype=np.uint64)
-
         self.pi_buffer = np.zeros((max_size, ACTION_SIZE), dtype=np.float32)
         self.z_buffer = np.zeros(max_size, dtype=np.float32)
 
