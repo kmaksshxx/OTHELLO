@@ -127,21 +127,19 @@ def train_with_mcts(
         if it % eval_interval != 0 or it == 0:
             continue
 
-        with timed(timer, 'duel'):
-            stats_best = duel(
-                best_model, model,
-                id_a=BEST_ID, id_b=CURRENT_ID,
-                elo_agent=elo_agent,
-                n_games=n_games,
-            )
+        if win_rate_random > 0.8:
+            with timed(timer, 'duel'):
+                stats_best = duel(
+                    best_model, model,
+                    id_a=BEST_ID, id_b=CURRENT_ID,
+                    elo_agent=elo_agent,
+                    n_games=n_games,
+                )
 
-        if (
-            stats_best["win_rate_b"] >= 0.55
-            and win_rate_random > 0.8
-        ):
-            best_model.load_state_dict(model.state_dict())
-            elo_agent.elos[BEST_ID] = elo_agent.elos[CURRENT_ID]
-            print("✅ Updated BEST model")
+            if stats_best["win_rate_b"] >= 0.55:
+                best_model.load_state_dict(model.state_dict())
+                elo_agent.elos[BEST_ID] = elo_agent.elos[CURRENT_ID]
+                print("✅ Updated BEST model")
 
         save_checkpoint(model, best_model, optimizer, elo_agent)
         save_state(buffer)
