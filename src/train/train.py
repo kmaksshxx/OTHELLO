@@ -1,17 +1,29 @@
 from src.self_play.self_play import *
 from src.buffer.buffer import ReplayBuffer
 import torch.nn.functional as F
+import argparse
+
+parser = argparse.ArgumentParser(description='Parameters')
 
 saved_path = ROOT / 'checkpoint' / 'checkpoint.tar'
 state_path = ROOT / 'checkpoint' / 'checkpoint_state.tar'
 
 train_param = config['train_param']
-VALUE_COEF = train_param['VALUE_COEF']
-CLIP_GRAD = train_param['CLIP_GRAD']
-LR = train_param['LR']
+value_coef = train_param['VALUE_COEF']
+clip_grad = train_param['CLIP_GRAD']
+lr = train_param['LR']
 WEIGHT_DECAY = train_param['WEIGHT_DECAY']
-TRAIN_STEPS_PER_ITER = train_param['TRAIN_STEPS_PER_ITER']
-N_GAMES = train_param['N_GAMES']
+train_steps_per_iter = train_param['TRAIN_STEPS_PER_ITER']
+n_games = train_param['N_GAMES']
+
+parser.add_argument('--value_coef', default=value_coef, type=float)
+parser.add_argument('--clip_grad', default=clip_grad, type=float)
+parser.add_argument('--lr', default=lr, type=float)
+parser.add_argument('--train_steps_per_iter', default=train_steps_per_iter, type=int)
+parser.add_argument('--n_games', default=n_games, type=int)
+
+args = parser.parse_args()
+
 
 NUM_ITERATIONS = 5000
 
@@ -62,8 +74,8 @@ def train_step(
         model: OthelloResNet, optimizer,
         replay_buffer: ReplayBuffer,
         batch_size=BATCH_SIZE,
-        value_coef=VALUE_COEF,
-        clip_grad=CLIP_GRAD
+        value_coef=args.value_coef,
+        clip_grad=args.clip_grad
 ):
     if len(replay_buffer) < batch_size:
         return None
@@ -86,9 +98,9 @@ def train_with_mcts(
     optimizer,
     elo_agent: EloAgent,
     num_iterations=NUM_ITERATIONS,
-    train_steps_per_iter=TRAIN_STEPS_PER_ITER,
-    eval_interval=10,
-    n_games=N_GAMES,
+    train_steps_per_iter=args.train_steps_per_iter,
+    eval_interval=1,
+    n_games=args.n_games,
     timer=None
 ):
     BEST_ID = "best"
@@ -166,7 +178,7 @@ if __name__ == "__main__":
     best_model = OthelloResNet(num_blocks=4, channels=64)
     best_model.to(DEVICE)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=WEIGHT_DECAY)
 
     # load checkpoint
     try:
@@ -201,6 +213,5 @@ if __name__ == "__main__":
     print('start training...')
     trained_model = train_with_mcts(
         best_model, model, buffer, optimizer, elo_agent,
-        eval_interval=1,
         timer=timer
     )
