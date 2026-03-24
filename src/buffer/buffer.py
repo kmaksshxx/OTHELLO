@@ -85,7 +85,7 @@ class ReplayBuffer:
         #     zs = torch.from_numpy(self.z_buffer[idxs]).pin_memory()
         #     zs = zs.to(DEVICE, non_blocking=True)
         # else:
-        states = torch.from_numpy(states_numpy)
+        states = torch.from_numpy(states_numpy).to(DEVICE)
         pis = torch.from_numpy(self.pi_buffer[idxs]).to(DEVICE)
         zs = torch.from_numpy(self.z_buffer[idxs]).to(DEVICE)
 
