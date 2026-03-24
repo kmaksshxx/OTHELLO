@@ -13,6 +13,7 @@ MCTS_SIMS = config['MCTS']['N_SIMS']
 BATCH_SIZE = config['BATCH_SIZE']
 MAX_DEPTH = config['MAX_DEPTH']
 MAX_NODE = config['MCTS']['MAX_NODE']
+n_workers = config['MCTS']['N_WORKERS']
 
 default_model = OthelloResNet()
 default_model.to(DEVICE)
@@ -431,7 +432,7 @@ class MCTS:
             max_nodes: int = MAX_NODE,
             device=DEVICE,
             add_noise: bool = True,
-            n_workers: int = 4,
+            n_workers: int = n_workers,
             virtual_loss: int = 3,
             timer: Optional[SectionTimer] = None
     ):

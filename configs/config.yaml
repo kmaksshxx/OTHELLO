@@ -15,3 +15,4 @@ train_param:
 MCTS:
   N_SIMS: 800
   MAX_NODE: 50000
+  N_WORKERS: 4

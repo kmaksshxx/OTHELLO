@@ -21,6 +21,7 @@ parser.add_argument('--clip_grad', default=clip_grad, type=float)
 parser.add_argument('--lr', default=lr, type=float)
 parser.add_argument('--train_steps_per_iter', default=train_steps_per_iter, type=int)
 parser.add_argument('--n_games', default=n_games, type=int)
+parser.add_argument('--eval_interval', default=1, type=int)
 
 args = parser.parse_args()
 
@@ -99,7 +100,7 @@ def train_with_mcts(
     elo_agent: EloAgent,
     num_iterations=NUM_ITERATIONS,
     train_steps_per_iter=args.train_steps_per_iter,
-    eval_interval=1,
+    eval_interval=args.eval_interval,
     n_games=args.n_games,
     timer=None
 ):
@@ -110,7 +111,7 @@ def train_with_mcts(
         timer.reset('current_0')
 
     for it in range(num_iterations):
-        CURRENT_ID = f"current_{it}"
+        CURRENT_ID = f"iteration_{it}"
 
         with timed(timer, 'duel_with_random'):
             stats = duel(None, model,
@@ -120,18 +121,17 @@ def train_with_mcts(
             win_rate_random = stats['win_rate_b']
 
         train_stats = []
-        for _ in range(train_steps_per_iter):
-            with timed(timer, 'generate_self_play'):
-                data, _ = generate_self_play(model)
-                for own, opp, pi, z, _ in data:
-                    replay_buffer.add(own, opp, pi, z)
 
-            with timed(timer, 'train_step'):
-                model.train()
-                for _ in range(10):
-                    out = train_step(model, optimizer, replay_buffer)
-                    if out is not None:
-                        train_stats.append(out)
+        with timed(timer, 'generate_self_play'):
+            data, _ = generate_self_play(model)
+            for own, opp, pi, z, _ in data:
+                replay_buffer.add(own, opp, pi, z)
+
+        with timed(timer, 'train_step'):
+            for _ in range(train_steps_per_iter):
+                out = train_step(model, optimizer, replay_buffer)
+                if out is not None:
+                    train_stats.append(out)
 
         pl = np.mean([s["policy_loss"] for s in train_stats])
         vl = np.mean([s["value_loss"] for s in train_stats])
