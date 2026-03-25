@@ -104,13 +104,6 @@ def train_with_mcts(
         if timer:
             timer.reset(CURRENT_ID)
 
-        with timed(timer, 'duel_with_random'):
-            stats = duel(None, model,
-                         id_a=RANDOM_ID, id_b=CURRENT_ID,
-                         elo_agent=elo_agent)
-
-            win_rate_random = stats['win_rate_b']
-
         train_stats = []
 
         with timed(timer, 'generate_self_play'):
@@ -129,8 +122,15 @@ def train_with_mcts(
         vl = np.mean([s["vl"] for s in train_stats])
         vl_std = np.std([s["vl"] for s in train_stats])
 
-        if it % eval_interval != 0 or it == 0:
+        if it % eval_interval != 0:
             continue
+
+        with timed(timer, 'duel_with_random'):
+            stats = duel(None, model,
+                         id_a=RANDOM_ID, id_b=CURRENT_ID,
+                         elo_agent=elo_agent)
+
+            win_rate_random = stats['win_rate_b']
 
         if win_rate_random >= 0.8:
             with timed(timer, 'duel'):
@@ -157,7 +157,7 @@ def train_with_mcts(
             f'\nwin rate random: {win_rate_random:.2f} |',
             f'pl: {pl:.2f} ({pl_std:.2f}) |',
             f'vl: {vl:.2f} ({vl_std:.2f}) |',
-            f'current elo: {int(elo_agent.elos[CURRENT_ID])}',
+            f'current elo: {int(elo_agent.elos[CURRENT_ID])} |',
             f'buffer len: {len(buffer)}\n'
         )
 
