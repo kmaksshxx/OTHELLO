@@ -55,17 +55,6 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
     return results, winner
 
 
-def selfplay_worker(args):
-    model_state, max_moves = args
-
-    model = OthelloResNet()
-    model.load_state_dict(model_state)
-
-    results, winner = generate_self_play(model, max_moves)
-
-    return results
-
-
 def generate_game(policy_by_player: dict, n_sim=50) -> int:
     """
     Duel with two models.

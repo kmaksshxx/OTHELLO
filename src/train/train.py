@@ -57,20 +57,6 @@ def load_state():
     return ck['state']
 
 
-def alphazero_loss(policy_logits, value, target_pi, target_z, value_coef=1.0):
-    """
-    Calculate loss
-
-    Returns
-      - loss, policy_loss, value_loss
-    """
-    log_p = F.log_softmax(policy_logits, dim=1)  # (B, 65)
-    policy_loss = - torch.mean(torch.sum(target_pi * log_p, dim=1))
-    value_loss = torch.mean((value - target_z)**2)
-    loss = policy_loss + value_coef * value_loss
-    return loss, policy_loss.item(), value_loss.item()
-
-
 def train_step(
         model: OthelloResNet, optimizer,
         replay_buffer: ReplayBuffer,
@@ -80,17 +66,22 @@ def train_step(
 ):
     if len(replay_buffer) < batch_size:
         return None
+
+    model.train()
     states, pis, zs = replay_buffer.sample(batch_size)
-    policy_logits, values = model(states)
-    loss, pl, vl = alphazero_loss(
-        policy_logits, values, pis, zs, value_coef
-    )
+    policy_logits, values = model(states)  # (B, 65), (B, 1)
+
+    log_p = F.log_softmax(policy_logits, dim=1)
+    pl = - torch.mean(torch.sum(pis * log_p, dim=1))
+    vl = torch.mean((values.squeeze(1) - zs) ** 2)
+    loss = pl + value_coef * vl
+
     optimizer.zero_grad()
     loss.backward()
     if clip_grad is not None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad)
     optimizer.step()
-    return {"loss": loss.item(), "policy_loss": pl, "value_loss": vl}
+    return {"loss": loss.item(), "pl": pl.item(), "vl": vl.item()}
 
 
 def train_with_mcts(
@@ -98,7 +89,6 @@ def train_with_mcts(
     replay_buffer: ReplayBuffer,
     optimizer,
     elo_agent: EloAgent,
-    num_iterations=NUM_ITERATIONS,
     train_steps_per_iter=args.train_steps_per_iter,
     eval_interval=args.eval_interval,
     n_games=args.n_games,
@@ -106,12 +96,13 @@ def train_with_mcts(
 ):
     BEST_ID = "best"
     RANDOM_ID = "random"
+    it = 0
 
-    if timer:
-        timer.reset('current_0')
-
-    for it in range(num_iterations):
+    while True:
+        it += 1
         CURRENT_ID = f"iteration_{it}"
+        if timer:
+            timer.reset(CURRENT_ID)
 
         with timed(timer, 'duel_with_random'):
             stats = duel(None, model,
@@ -127,19 +118,21 @@ def train_with_mcts(
             for own, opp, pi, z, _ in data:
                 replay_buffer.add(own, opp, pi, z)
 
-        with timed(timer, 'train_step'):
-            for _ in range(train_steps_per_iter):
+        for _ in range(train_steps_per_iter):
+            with timed(timer, 'train_step'):
                 out = train_step(model, optimizer, replay_buffer)
                 if out is not None:
                     train_stats.append(out)
 
-        pl = np.mean([s["policy_loss"] for s in train_stats])
-        vl = np.mean([s["value_loss"] for s in train_stats])
+        pl = np.mean([s["pl"] for s in train_stats])
+        pl_std = np.std([s["pl"] for s in train_stats])
+        vl = np.mean([s["vl"] for s in train_stats])
+        vl_std = np.std([s["vl"] for s in train_stats])
 
         if it % eval_interval != 0 or it == 0:
             continue
 
-        if win_rate_random > 0.8:
+        if win_rate_random >= 0.8:
             with timed(timer, 'duel'):
                 stats_best = duel(
                     best_model, model,
@@ -153,20 +146,21 @@ def train_with_mcts(
                 elo_agent.elos[BEST_ID] = elo_agent.elos[CURRENT_ID]
                 print("✅ Updated BEST model")
 
+                if elo_agent.elos[BEST_ID] >= 1800:
+                    break
+
         save_checkpoint(model, best_model, optimizer, elo_agent)
         save_state(buffer)
 
         timer.report()
         print(
-            f'\nwin rate random: {win_rate_random:.1f} |',
-            f'pl: {pl:.2f} |',
-            f'vl: {vl:.2f} |',
-            f'best elo: {int(elo_agent.elos[BEST_ID])} |',
-            f'current elo: {int(elo_agent.elos[CURRENT_ID])}\n'
+            f'\nwin rate random: {win_rate_random:.2f} |',
+            f'pl: {pl:.2f} ({pl_std:.2f}) |',
+            f'vl: {vl:.2f} ({vl_std:.2f}) |',
+            f'current elo: {int(elo_agent.elos[CURRENT_ID])}',
+            f'buffer len: {len(buffer)}\n'
         )
 
-        if timer:
-            timer.reset(CURRENT_ID)
     return model
 
 
@@ -174,6 +168,7 @@ if __name__ == "__main__":
     # Models & Optimizer
     model = OthelloResNet(num_blocks=4, channels=64)
     model.to(DEVICE)
+    model.train()
 
     best_model = OthelloResNet(num_blocks=4, channels=64)
     best_model.to(DEVICE)
@@ -205,7 +200,7 @@ if __name__ == "__main__":
         print('State Not Loaded')
 
     print('Warm-up replay buffer...')
-    while len(buffer) < BATCH_SIZE * 100:
+    while len(buffer) < BATCH_SIZE * 10:
         data, _ = generate_self_play(model)
         for own, opp, pi, z, _ in data:
             buffer.add(own, opp, pi, z)
