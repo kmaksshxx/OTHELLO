@@ -21,7 +21,7 @@ parser.add_argument('--clip_grad', default=clip_grad, type=float)
 parser.add_argument('--lr', default=lr, type=float)
 parser.add_argument('--train_steps_per_iter', default=train_steps_per_iter, type=int)
 parser.add_argument('--n_games', default=n_games, type=int)
-parser.add_argument('--eval_interval', default=1, type=int)
+parser.add_argument('--eval_interval', default=10, type=int)
 
 args = parser.parse_args()
 
@@ -67,7 +67,6 @@ def train_step(
     if len(replay_buffer) < batch_size:
         return None
 
-    model.train()
     states, pis, zs = replay_buffer.sample(batch_size)
     policy_logits, values = model(states)  # (B, 65), (B, 1)
 
@@ -107,7 +106,7 @@ def train_with_mcts(
         train_stats = []
 
         with timed(timer, 'generate_self_play'):
-            data, _ = generate_self_play(model)
+            data, _ = generate_self_play(best_model)
             for own, opp, pi, z, _ in data:
                 replay_buffer.add(own, opp, pi, z)
 
@@ -132,22 +131,21 @@ def train_with_mcts(
 
             win_rate_random = stats['win_rate_b']
 
-        if win_rate_random >= 0.8:
-            with timed(timer, 'duel'):
-                stats_best = duel(
-                    best_model, model,
-                    id_a=BEST_ID, id_b=CURRENT_ID,
-                    elo_agent=elo_agent,
-                    n_games=n_games,
-                )
+        with timed(timer, 'duel'):
+            stats_best = duel(
+                best_model, model,
+                id_a=BEST_ID, id_b=CURRENT_ID,
+                elo_agent=elo_agent,
+                n_games=n_games,
+            )
 
-            if stats_best["win_rate_b"] >= 0.55:
-                best_model.load_state_dict(model.state_dict())
-                elo_agent.elos[BEST_ID] = elo_agent.elos[CURRENT_ID]
-                print("✅ Updated BEST model")
+        if stats_best["win_rate_b"] >= 0.55:
+            best_model.load_state_dict(model.state_dict())
+            elo_agent.elos[BEST_ID] = elo_agent.elos[CURRENT_ID]
+            print("✅ Updated BEST model")
 
-                if elo_agent.elos[BEST_ID] >= 1800:
-                    break
+            if elo_agent.elos[BEST_ID] >= 1800:
+                break
 
         save_checkpoint(model, best_model, optimizer, elo_agent)
         save_state(buffer)
