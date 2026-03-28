@@ -1,6 +1,5 @@
-from src.mcts.mcts import *
+from src.buffer.buffer import *
 from collections import deque
-from multiprocessing import Pool
 
 
 def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
@@ -228,4 +227,3 @@ if __name__ == "__main__":
             datax = generate_self_play(default_model)
 
     timer.report()
-
