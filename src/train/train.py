@@ -1,6 +1,8 @@
 from src.self_play.self_play import *
 from src.buffer import *
 import torch.nn.functional as F
+import hydra
+from omegaconf import DictConfig
 
 saved_path = ROOT / 'checkpoint' / 'checkpoint.tar'
 state_path = ROOT / 'checkpoint' / 'checkpoint_state.tar'
@@ -37,9 +39,7 @@ def load_state():
 def train_step(
         model: OthelloResNet, optimizer,
         replay_buffer: ReplayBuffer,
-        value_coef=cfg.train.value_coef,
-        clip_grad=cfg.train.clip_grad
-):
+        value_coef, clip_grad):
     if len(replay_buffer) < BATCH_SIZE:
         return None
 
@@ -62,12 +62,9 @@ def train_step(
 def train_with_mcts(
     best_model: OthelloResNet, model: OthelloResNet,
     replay_buffer: ReplayBuffer,
-    optimizer,
-    elo_agent: EloAgent,
-    train_steps_per_iter=cfg.train.train_steps_per_iter,
-    eval_interval=cfg.train.eval_interval,
-    n_games=cfg.train.n_games,
-    goal_elo=cfg.train.goal_elo,
+    optimizer, elo_agent: EloAgent,
+    train_steps_per_iter, value_coef, clip_grad,
+    eval_interval, n_games, goal_elo,
     timer=None
 ):
     BEST_ID = "best"
@@ -89,7 +86,7 @@ def train_with_mcts(
 
         for _ in range(train_steps_per_iter):
             with timed(timer, 'train_step'):
-                out = train_step(model, optimizer, replay_buffer)
+                out = train_step(model, optimizer, replay_buffer, value_coef, clip_grad)
                 if out is not None:
                     train_stats.append(out)
 
@@ -137,8 +134,8 @@ def train_with_mcts(
         )
 
 
-
-def main():
+@hydra.main(config_path="../../configs", config_name="config", version_base=None)
+def main(cfg: DictConfig):
     # Models & Optimizer
     model = OthelloResNet(num_blocks=4, channels=64)
     model.to(DEVICE)
@@ -184,10 +181,15 @@ def main():
     print('start training...')
     train_with_mcts(
         best_model, model, buffer, optimizer, elo_agent,
+        cfg.train.train_steps_per_iter,
+        cfg.train.value_coef,
+        cfg.train.clip_grad,
+        cfg.train.eval_interval,
+        cfg.train.n_games,
+        cfg.train.goal_elo,
         timer=timer
     )
 
 
 if __name__ == "__main__":
     main()
-
