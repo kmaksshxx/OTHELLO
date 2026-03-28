@@ -26,9 +26,6 @@ parser.add_argument('--eval_interval', default=10, type=int)
 args = parser.parse_args()
 
 
-NUM_ITERATIONS = 5000
-
-
 def save_checkpoint(model, best_model, optimizer, elo_tracker):
     torch.save({
         "model": model.state_dict(),
@@ -142,7 +139,7 @@ def train_with_mcts(
         if stats_best["win_rate_b"] >= 0.55:
             best_model.load_state_dict(model.state_dict())
             elo_agent.elos[BEST_ID] = elo_agent.elos[CURRENT_ID]
-            print("✅ Updated BEST model")
+            print("✅ Updated BEST model\n")
 
             if elo_agent.elos[BEST_ID] >= 1800:
                 break

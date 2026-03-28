@@ -2,7 +2,7 @@ from src.mcts.mcts import *
 
 
 class ReplayBuffer:
-    def __init__(self, max_size=100_000):
+    def __init__(self, max_size=10_000):
         self.max_size = max_size
         self.ptr = 0
 
@@ -75,16 +75,6 @@ class ReplayBuffer:
             dtype=np.float32
         )
 
-        # if DEVICE == 'cuda':
-        #     states = torch.from_numpy(states_numpy).pin_memory()
-        #     states = states.to(DEVICE, non_blocking=True)
-        #
-        #     pis = torch.from_numpy(self.pi_buffer[idxs]).pin_memory()
-        #     pis = pis.to(DEVICE, non_blocking=True)
-        #
-        #     zs = torch.from_numpy(self.z_buffer[idxs]).pin_memory()
-        #     zs = zs.to(DEVICE, non_blocking=True)
-        # else:
         states = torch.from_numpy(states_numpy).to(DEVICE)
         pis = torch.from_numpy(self.pi_buffer[idxs]).to(DEVICE)
         zs = torch.from_numpy(self.z_buffer[idxs]).to(DEVICE)
