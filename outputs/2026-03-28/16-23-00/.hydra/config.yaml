@@ -1,0 +1,12 @@
+train:
+  learning_rate: 0.0003
+  batch_size: 64
+  weight_decay: 0.001
+  value_coef: 1.0
+  clip_grad: 1.0
+  train_steps_per_iter: 40
+  n_games: 20
+mcts:
+  n_sims: 800
+  max_node: 50000
+  n_workers: 4
