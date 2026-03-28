@@ -1,33 +1,51 @@
 from src.train.train import *
 
-ck = load_checkpoint()
 
-default_model.load_state_dict(ck['model'])
+if __name__ == "__main__":
+    # Models & Optimizer
+    model = OthelloResNet(num_blocks=4, channels=64)
+    model.to(DEVICE)
+    model.train()
 
-mcts = MCTS(default_model, n_sim=50)
+    best_model = OthelloResNet(num_blocks=4, channels=64)
+    best_model.to(DEVICE)
 
-own, opp = init_board()
-player = 1
-pass_count = 1
-action = None
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay
+    )
 
-while True:
-    pi = mcts.search(own, opp, last_action=action)
-    action = select_action_from_pi(pi, 1.0)
-    inp = bitboard_to_input(own, opp)
-    inp_t = torch.from_numpy(inp).unsqueeze(0)
+    # load checkpoint
+    try:
+        checkpoint = load_checkpoint()
+        model.load_state_dict(checkpoint['model'])
+        best_model.load_state_dict(checkpoint['best_model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        elo_agent = EloAgent.load_state_dict(checkpoint["elo"])
+        print('Checkpoint Loaded')
 
-    x, y = default_model(inp_t)
-    print(y.squeeze())
+    except Exception as e:
+        print(e)
+        elo_agent = EloAgent()
+        print('Checkpoint Not Loaded')
 
-    own, opp = apply_move_bitboard(own, opp, action)
-    own, opp = opp, own
-    player = -player
+    try:
+        state = load_state()
+        buffer = ReplayBuffer.load_state(state)
+        print('State Loaded')
 
-    pass_count = pass_count + 1 if action == PASS_ACTION else 0
-    if pass_count == 2:
-        break
+    except Exception as e:
+        print(e)
+        buffer = ReplayBuffer()
+        print('State Not Loaded')
 
+    print('Warm-up replay buffer...')
+    while len(buffer) < BATCH_SIZE * 10:
+        data, _ = generate_self_play(model)
+        for own, opp, pi, z, _ in data:
+            buffer.add(own, opp, pi, z)
 
-
-
+    print('start training...')
+    trained_model = train_with_mcts(
+        best_model, model, buffer, optimizer, elo_agent,
+        timer=timer
+    )

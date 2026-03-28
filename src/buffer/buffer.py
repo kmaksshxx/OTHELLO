@@ -1,4 +1,8 @@
-from src.mcts.mcts import *
+import numpy as np
+from src.environment.env import ACTION_SIZE, bitboard_to_input
+from src.mcts.mcts import DEVICE, BATCH_SIZE
+import torch
+from typing import Tuple
 
 
 class ReplayBuffer:
@@ -44,9 +48,7 @@ class ReplayBuffer:
 
         self.ptr += 1
 
-    def sample(self, batch_size) -> Tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor
-    ]:
+    def sample(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Sample (states, pis, zs) from buffer
           - states: (B, 2, 8, 8)
@@ -57,7 +59,7 @@ class ReplayBuffer:
         if size == 0:
             raise RuntimeError("Replay buffer is empty")
 
-        idx = np.random.randint(size, size=batch_size)
+        idx = np.random.randint(size, size=BATCH_SIZE)
 
         owns = self.own_buffer[idx]
         opps = self.opp_buffer[idx]

@@ -1,18 +1,4 @@
-BATCH_SIZE: 64
-BOARD_SIZE: 8
-PASS_ACTION: 64
-ACTION_SIZE: 65
-MAX_DEPTH: 128
+defaults:
+  - train: default
+  - mcts: default
 
-train_param:
-  LR: 0.0003
-  WEIGHT_DECAY: 0.001
-  VALUE_COEF: 1.0
-  CLIP_GRAD: 1.0
-  TRAIN_STEPS_PER_ITER: 40
-  N_GAMES: 20
-
-MCTS:
-  N_SIMS: 800
-  MAX_NODE: 50000
-  N_WORKERS: 4

@@ -1,0 +1,3 @@
+n_sims: 800
+max_node: 50000
+n_workers: 2

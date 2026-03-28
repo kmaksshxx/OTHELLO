@@ -1,8 +1,8 @@
-from src.buffer.buffer import *
+from src.mcts.mcts import *
 from collections import deque
 
 
-def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
+def generate_self_play(model: OthelloResNet, /, max_moves=128, n_workers=2, timer=None):
     """
     Generate self_play history
 
@@ -17,7 +17,7 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
     own, opp = init_board()
     player = 1
     last_action = None
-    mcts = MCTS(model)
+    mcts = MCTS(model, n_workers=n_workers)
 
     for move in range(max_moves):
         n_sim = 400 if move < 12 else 200 if move < 40 else 100
@@ -54,7 +54,7 @@ def generate_self_play(model: OthelloResNet, max_moves=128, timer=None):
     return results, winner
 
 
-def generate_game(policy_by_player: dict, n_sim=50) -> int:
+def generate_game(policy_by_player: dict, /, n_workers=2, n_sim=50) -> int:
     """
     Duel with two models.
 
@@ -66,7 +66,7 @@ def generate_game(policy_by_player: dict, n_sim=50) -> int:
     """
 
     mcts_by_player = {
-        p: None if m is None else MCTS(m, n_sim=n_sim, add_noise=False)
+        p: None if m is None else MCTS(m, n_sim=n_sim, n_workers=n_workers, add_noise=False)
         for p, m in policy_by_player.items()
     }
 
@@ -139,13 +139,6 @@ class EloAgent:
     def record_iteration_delta(self, delta):
         self.history.append(delta)
 
-    def is_plateau(self, win_rate=None):
-        if len(self.history) < self.window:
-            return False
-
-        elo_flat = np.mean(np.abs(self.history)) < self.plateau_delta
-        return elo_flat
-
     def ensure(self, *ids: str):
         for x in ids:
             if x not in self.elos:
@@ -175,7 +168,7 @@ class EloAgent:
 def duel(model_a, model_b,
          id_a='old', id_b='new',
          elo_agent: Optional[EloAgent] = None,
-         n_games: int = 20, n_sim: int = 50,
+         n_games: int = 20, n_sim: int = 50, n_workers=2,
          timer: Optional[SectionTimer] = None):
     stats = defaultdict(float)
     total_elo_delta_new = 0
@@ -192,11 +185,11 @@ def duel(model_a, model_b,
     for i in range(n_games):
         with timed(timer, 'generate_game'):
             if i % 2 == 0:
-                winner = generate_game({1: model_a, -1: model_b}, n_sim=n_sim)
+                winner = generate_game({1: model_a, -1: model_b}, n_sim=n_sim, n_workers=n_workers)
                 color_a = 1
 
             else:
-                winner = generate_game({1: model_b, -1: model_a}, n_sim=n_sim)
+                winner = generate_game({1: model_b, -1: model_a}, n_sim=n_sim, n_workers=n_workers)
                 color_a = -1
 
         result_a = 1.0 if winner == color_a else 0.5 if winner == 0 else 0.0
@@ -214,16 +207,14 @@ def duel(model_a, model_b,
     stats["elo_delta_new"] = total_elo_delta_new
     stats[id_a] = elo_agent.elos[id_a]
     stats[id_b] = elo_agent.elos[id_b]
-    stats["plateau"] = float(elo_agent.is_plateau())
 
     return stats
 
 
 if __name__ == "__main__":
-    generate_self_play(default_model)
+    model = OthelloResNet()
 
-    for _ in range(8):
-        with timed(timer, 'A'):
-            datax = generate_self_play(default_model)
-
+    for i in [1, 2, 3, 4, 5, 6]:
+        with timed(timer, f"worker: {i}"):
+            duel(model, model, n_workers=i)
     timer.report()

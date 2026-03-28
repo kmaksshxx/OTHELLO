@@ -353,7 +353,7 @@ class SectionTimer:
         self.n = defaultdict(int)
         self.title = title
 
-    def reset(self, title=None):
+    def reset(self, title: Optional[str] = None):
         self.t.clear()
         self.n.clear()
         self.title = title

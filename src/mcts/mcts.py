@@ -1,22 +1,16 @@
 from src.environment import *
-from src.models.models import OthelloResNet
+from src.models import *
+from src.utils import *
 from pathlib import Path
 import threading
-import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-config_path = ROOT / 'configs' / 'config.yaml'
-with open(config_path) as f:
-    config = yaml.safe_load(f)
 
-MCTS_SIMS = config['MCTS']['N_SIMS']
-BATCH_SIZE = config['BATCH_SIZE']
-MAX_DEPTH = config['MAX_DEPTH']
-MAX_NODE = config['MCTS']['MAX_NODE']
-n_workers = config['MCTS']['N_WORKERS']
-
-default_model = OthelloResNet()
-default_model.to(DEVICE)
+MCTS_SIMS = cfg.mcts.n_sims
+BATCH_SIZE = cfg.train.batch_size
+MAX_DEPTH = 128
+MAX_NODE = cfg.mcts.max_node
+n_workers = cfg.mcts.n_workers
 
 
 @nb.njit
@@ -113,7 +107,7 @@ def popcount(x: int):
         c += 1
     return c
 
-
+'''
 class _MCTS:
     def __init__(self, model: OthelloResNet, c_puct=1.5, n_sim=MCTS_SIMS,
                  batch_eval=BATCH_SIZE, dirichlet_alpha=0.3, dirichlet_epsilon=0.25,
@@ -418,12 +412,14 @@ class _MCTS:
     def reset_tree(self):
         self.reset_pool()
         self.root_nid = -1
+'''
 
 
 class MCTS:
     def __init__(
             self,
             model: OthelloResNet,
+            /,
             c_puct: float = 1.5,
             n_sim: int = MCTS_SIMS,
             batch_eval: int = BATCH_SIZE,
@@ -434,7 +430,6 @@ class MCTS:
             add_noise: bool = True,
             n_workers: int = n_workers,
             virtual_loss: int = 3,
-            timer: Optional[SectionTimer] = None
     ):
         self.model = model
         self.model.to(device)
@@ -826,13 +821,17 @@ class MCTS:
     # ─────────────────────────────────────────────────────────────────────────
 
     def search(
-            self, own, opp,
+            self, own: int, opp: int, /,
             n_sim: Optional[int] = None,
+            n_workers: Optional[int] = None,
             last_action: Optional[int] = None,
             timer: Optional[SectionTimer] = None,
     ) -> np.ndarray:
         if n_sim is None:
             n_sim = self.n_sim
+
+        if n_workers is None:
+            n_workers = self.n_workers
 
         with timed(timer, 'ensure_root'):
             self.ensure_root(own, opp, last_action)
@@ -840,8 +839,8 @@ class MCTS:
         with timed(timer, 'distribution'):
             # Distribute simulations across workers as evenly as possible.
             # Each worker runs its share sequentially; all workers run concurrently.
-            sims_per_worker = [n_sim // self.n_workers] * self.n_workers
-            for i in range(n_sim % self.n_workers):
+            sims_per_worker = [n_sim // n_workers] * n_workers
+            for i in range(n_sim % n_workers):
                 sims_per_worker[i] += 1
 
             # Shared counter: coordinator exits when it reaches zero.
@@ -911,12 +910,34 @@ class MCTS:
         self.root_nid = -1
 
 
+def simulate(mcts: MCTS):
+    own, opp = init_board()
+    player = 1
+    pass_count = 0
+    action = None
+    while True:
+        pi = mcts.search(own, opp, last_action=action)
+        action = select_action_from_pi(pi, 0)
+        own, opp = apply_move_bitboard(own, opp, action)
+        own, opp = opp, own
+        player = -player
+
+        pass_count = pass_count + 1 if action == PASS_ACTION else 0
+        if pass_count == 2:
+            break
+
+
 if __name__ == '__main__':
     timer.reset('MCTS')
+    default_model = OthelloResNet()
+    default_model.to(DEVICE)
     own, opp = init_board()
 
-    mcts = MCTS(default_model)
-    pi = mcts.search(own, opp, timer=timer)
-    timer.report()
+    mcts = MCTS(default_model, n_workers=4)
+    _ = mcts.search(own, opp)
 
-    print(pi)
+    for i in [1, 2, 3, 4, 5, 6]:
+        with timed(timer, f"workers: {i}"):
+            mcts = MCTS(default_model, n_workers=i)
+            simulate(mcts)
+    timer.report()

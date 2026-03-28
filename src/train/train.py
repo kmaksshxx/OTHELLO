@@ -1,29 +1,9 @@
 from src.self_play.self_play import *
-from src.buffer.buffer import ReplayBuffer
+from src.buffer import *
 import torch.nn.functional as F
-import argparse
-
-parser = argparse.ArgumentParser(description='Parameters')
 
 saved_path = ROOT / 'checkpoint' / 'checkpoint.tar'
 state_path = ROOT / 'checkpoint' / 'checkpoint_state.tar'
-
-train_param = config['train_param']
-value_coef = train_param['VALUE_COEF']
-clip_grad = train_param['CLIP_GRAD']
-lr = train_param['LR']
-WEIGHT_DECAY = train_param['WEIGHT_DECAY']
-train_steps_per_iter = train_param['TRAIN_STEPS_PER_ITER']
-n_games = train_param['N_GAMES']
-
-parser.add_argument('--value_coef', default=value_coef, type=float)
-parser.add_argument('--clip_grad', default=clip_grad, type=float)
-parser.add_argument('--lr', default=lr, type=float)
-parser.add_argument('--train_steps_per_iter', default=train_steps_per_iter, type=int)
-parser.add_argument('--n_games', default=n_games, type=int)
-parser.add_argument('--eval_interval', default=10, type=int)
-
-args = parser.parse_args()
 
 
 def save_checkpoint(model, best_model, optimizer, elo_tracker):
@@ -57,14 +37,13 @@ def load_state():
 def train_step(
         model: OthelloResNet, optimizer,
         replay_buffer: ReplayBuffer,
-        batch_size=BATCH_SIZE,
-        value_coef=args.value_coef,
-        clip_grad=args.clip_grad
+        value_coef=cfg.train.value_coef,
+        clip_grad=cfg.train.clip_grad
 ):
-    if len(replay_buffer) < batch_size:
+    if len(replay_buffer) < BATCH_SIZE:
         return None
 
-    states, pis, zs = replay_buffer.sample(batch_size)
+    states, pis, zs = replay_buffer.sample()
     policy_logits, values = model(states)  # (B, 65), (B, 1)
 
     log_p = F.log_softmax(policy_logits, dim=1)
@@ -85,9 +64,10 @@ def train_with_mcts(
     replay_buffer: ReplayBuffer,
     optimizer,
     elo_agent: EloAgent,
-    train_steps_per_iter=args.train_steps_per_iter,
-    eval_interval=args.eval_interval,
-    n_games=args.n_games,
+    train_steps_per_iter=cfg.train.train_steps_per_iter,
+    eval_interval=cfg.train.eval_interval,
+    n_games=cfg.train.n_games,
+    goal_elo=cfg.train.goal_elo,
     timer=None
 ):
     BEST_ID = "best"
@@ -141,11 +121,11 @@ def train_with_mcts(
             elo_agent.elos[BEST_ID] = elo_agent.elos[CURRENT_ID]
             print("✅ Updated BEST model\n")
 
-            if elo_agent.elos[BEST_ID] >= 1800:
+            if elo_agent.elos[BEST_ID] >= goal_elo:
                 break
 
         save_checkpoint(model, best_model, optimizer, elo_agent)
-        save_state(buffer)
+        save_state(replay_buffer)
 
         timer.report()
         print(
@@ -153,55 +133,9 @@ def train_with_mcts(
             f'pl: {pl:.2f} ({pl_std:.2f}) |',
             f'vl: {vl:.2f} ({vl_std:.2f}) |',
             f'current elo: {int(elo_agent.elos[CURRENT_ID])} |',
-            f'buffer len: {len(buffer)}\n'
+            f'buffer len: {len(replay_buffer)}\n'
         )
 
     return model
 
 
-if __name__ == "__main__":
-    # Models & Optimizer
-    model = OthelloResNet(num_blocks=4, channels=64)
-    model.to(DEVICE)
-    model.train()
-
-    best_model = OthelloResNet(num_blocks=4, channels=64)
-    best_model.to(DEVICE)
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=WEIGHT_DECAY)
-
-    # load checkpoint
-    try:
-        checkpoint = load_checkpoint()
-        model.load_state_dict(checkpoint['model'])
-        best_model.load_state_dict(checkpoint['best_model'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        elo_agent = EloAgent.load_state_dict(checkpoint["elo"])
-        print('Checkpoint Loaded')
-
-    except Exception as e:
-        print(e)
-        elo_agent = EloAgent()
-        print('Checkpoint Not Loaded')
-
-    try:
-        state = load_state()
-        buffer = ReplayBuffer.load_state(state)
-        print('State Loaded')
-
-    except Exception as e:
-        print(e)
-        buffer = ReplayBuffer()
-        print('State Not Loaded')
-
-    print('Warm-up replay buffer...')
-    while len(buffer) < BATCH_SIZE * 10:
-        data, _ = generate_self_play(model)
-        for own, opp, pi, z, _ in data:
-            buffer.add(own, opp, pi, z)
-
-    print('start training...')
-    trained_model = train_with_mcts(
-        best_model, model, buffer, optimizer, elo_agent,
-        timer=timer
-    )
