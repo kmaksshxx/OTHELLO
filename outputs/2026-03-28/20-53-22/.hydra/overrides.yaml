@@ -1,0 +1,2 @@
+- train.n_games=50
+- train.train_steps_per_iter=5

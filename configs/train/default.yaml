@@ -1,6 +1,6 @@
 lr: 3e-4
 batch_size: 64
-weight_decay: 0.001
+weight_decay: 0.01
 value_coef: 1.0
 clip_grad: 1.0
 train_steps_per_iter: 40

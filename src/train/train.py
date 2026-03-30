@@ -64,7 +64,7 @@ def train_with_mcts(
     replay_buffer: ReplayBuffer,
     optimizer, elo_agent: EloAgent,
     train_steps_per_iter, value_coef, clip_grad,
-    eval_interval, n_games, goal_elo,
+    eval_interval, n_games, goal_elo, n_workers,
     timer=None
 ):
     BEST_ID = "best"
@@ -80,7 +80,7 @@ def train_with_mcts(
         train_stats = []
 
         with timed(timer, 'generate_self_play'):
-            data, _ = generate_self_play(best_model)
+            data, _ = generate_self_play(best_model, n_workers=n_workers)
             for own, opp, pi, z, _ in data:
                 replay_buffer.add(own, opp, pi, z)
 
@@ -101,7 +101,7 @@ def train_with_mcts(
         with timed(timer, 'duel_with_random'):
             stats = duel(None, model,
                          id_a=RANDOM_ID, id_b=CURRENT_ID,
-                         elo_agent=elo_agent)
+                         elo_agent=elo_agent, n_workers=n_workers)
 
             win_rate_random = stats['win_rate_b']
 
@@ -110,7 +110,7 @@ def train_with_mcts(
                 best_model, model,
                 id_a=BEST_ID, id_b=CURRENT_ID,
                 elo_agent=elo_agent,
-                n_games=n_games,
+                n_games=n_games, n_workers=n_workers
             )
 
         if stats_best["win_rate_b"] >= 0.55:
@@ -136,6 +136,8 @@ def train_with_mcts(
 
 @hydra.main(config_path="../../configs", config_name="config", version_base=None)
 def main(cfg: DictConfig):
+    print(f"Device: {DEVICE}")
+
     # Models & Optimizer
     model = OthelloResNet(num_blocks=4, channels=64)
     model.to(DEVICE)
@@ -174,7 +176,7 @@ def main(cfg: DictConfig):
 
     print('Warm-up replay buffer...')
     while len(buffer) < BATCH_SIZE * 10:
-        data, _ = generate_self_play(model)
+        data, _ = generate_self_play(model, n_workers=cfg.mcts.n_workers)
         for own, opp, pi, z, _ in data:
             buffer.add(own, opp, pi, z)
 
@@ -187,6 +189,7 @@ def main(cfg: DictConfig):
         cfg.train.eval_interval,
         cfg.train.n_games,
         cfg.train.goal_elo,
+        cfg.mcts.n_workers,
         timer=timer
     )
 
